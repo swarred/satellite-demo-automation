@@ -1,11 +1,6 @@
 ---
 # demo-restore.yml — Restore ground station connectivity and sync offline alerts
 #
-# Run this after demo-ddil.yml. The satellite VM is currently in offline mode.
-# This playbook restores connectivity, watches the EDA detect it, observes the
-# autonomous bootc switch back to the online image, and shows the offline alerts
-# appearing in the ground station UI.
-#
 # Usage: ansible-playbook demo-restore.yml --ask-become-pass
 
 - name: DEMO — Restore connectivity and sync offline alerts to ground station
@@ -13,14 +8,15 @@
   connection: local
   gather_facts: false
 
+  vars:
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
   tasks:
 
     # ── Setup ────────────────────────────────────────────────────────────────
 
     - name: Resolve ground station hostname
-      command: >-
-        oc get route ground-station -n {{ ocp_namespace }}
-        -o jsonpath='{.spec.host}'
+      command: oc get route ground-station -n {{ ocp_namespace }} -o jsonpath='{.spec.host}'
       register: gs_route
       changed_when: false
 
@@ -31,8 +27,7 @@
       changed_when: true
 
     - name: Wait for VM to come up and get an IP
-      command: >-
-        virsh --connect qemu:///system domifaddr {{ vm_name }}
+      command: virsh --connect qemu:///system domifaddr {{ vm_name }}
       register: domifaddr
       become: true
       changed_when: false
@@ -44,6 +39,11 @@
       set_fact:
         vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
 
+    - name: Clear stale SSH known_hosts entry for VM IP
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
     - name: Wait for SSH to be ready
       wait_for:
         host: "{{ vm_ip }}"
@@ -53,20 +53,13 @@
     # ── Restore connectivity ──────────────────────────────────────────────────
 
     - name: "[RESTORE] Connectivity restored — removing ground station hostname block"
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "sudo sed -i '/{{ gs_route.stdout }}/d' /etc/hosts"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'sudo sed -i \"/{{ gs_route.stdout }}/d\" /etc/hosts'"
       changed_when: true
 
     # ── Watch EDA detect reconnect ────────────────────────────────────────────
-    # Blocks until the reconnect rulebook fires (~60s). The audience watches
-    # the task name while Ansible waits for the autonomous response.
 
     - name: "[EDA] Waiting for reconnect detection and autonomous switch back to online..."
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "sudo journalctl -fu satellite-eda --no-hostname |
-         grep --line-buffered -m 1 'online image staged\|CONNECTIVITY RESTORED'"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} -t demo@{{ vm_ip }} 'sudo journalctl -fu satellite-eda --no-hostname | grep --line-buffered -m 1 \"online image staged\\|CONNECTIVITY RESTORED\"'"
       register: eda_reconnect
       changed_when: false
 
@@ -96,48 +89,39 @@
         port: 22
         timeout: 120
 
+    - name: Clear stale SSH known_hosts entry after reboot (new host key)
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
     # ── Confirm online mode and offline alert sync ────────────────────────────
 
     - name: "[ONLINE] Confirming online image is booted"
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "sudo bootc status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"status\"][\"booted\"][\"image\"][\"image\"][\"image\"])'"
+      shell: |
+        sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} \
+          "sudo bootc status | grep -i 'image:' | head -1"
       register: booted_image
-      changed_when: false
-
-    - name: "[ONLINE] Satellite back on online image — ground station link re-establishing"
-      debug:
-        msg: "Booted image: {{ booted_image.stdout }}"
-
-    - name: "[SYNC] Waiting for satellite-sim to start and load offline alert queue..."
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "sudo journalctl -u satellite-sim --no-hostname --since '1 minute ago' |
-         grep --line-buffered -m 1 'offline.*alert\|offline-queue\|Offline queue'"
-      register: queue_load
       changed_when: false
       failed_when: false
 
-    - name: "[SYNC] Count offline alerts flushed to ground station"
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "wc -l < /var/lib/satellite-sim/offline-queue.jsonl.loaded 2>/dev/null || echo 0"
+    - name: "[ONLINE] Satellite back on online image — ground station link re-establishing"
+      debug:
+        msg: "{{ booted_image.stdout | default('online image') }}"
+
+    - name: "[SYNC] Count offline alerts queued for ground station"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'wc -l < /var/lib/satellite-sim/offline-queue.jsonl.loaded 2>/dev/null || echo 0'"
       register: offline_count
       changed_when: false
       failed_when: false
 
     - name: "[SYNC] Offline alerts synced — check ground station UI for teal OFFLINE badges"
       debug:
-        msg: >-
-          {{ offline_count.stdout | trim }} alert(s) classified offline during DDIL
-          are now visible in the ground station UI with OFFLINE badges.
-          Open {{ 'https://' + gs_route.stdout }} to see them.
+        msg:
+          - "{{ offline_count.stdout | trim }} alert(s) classified offline during DDIL"
+          - "Open https://{{ gs_route.stdout }} to see them with OFFLINE badges."
 
     - name: "[LINK] Waiting for Skupper link to re-establish..."
-      shell: >-
-        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "timeout 180 sh -c 'until sudo test -f /var/lib/skupper/.linked; do sleep 10; done'
-         && echo linked || echo unlinked"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} \"timeout 180 sh -c 'until sudo test -f /var/lib/skupper/.linked; do sleep 10; done' && echo linked || echo unlinked\""
       register: link_status
       changed_when: false
       failed_when: false
