@@ -26,6 +26,9 @@
       register: domifaddr
       become: true
       changed_when: false
+      until: domifaddr.rc == 0 and domifaddr.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')
+      retries: 18
+      delay: 10
 
     - name: Parse VM IP
       set_fact:

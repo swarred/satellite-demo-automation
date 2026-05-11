@@ -17,17 +17,6 @@
 
     # ── Setup ────────────────────────────────────────────────────────────────
 
-    - name: Resolve satellite VM IP address
-      command: >-
-        virsh --connect qemu:///system domifaddr {{ vm_name }}
-      register: domifaddr
-      become: true
-      changed_when: false
-
-    - name: Parse VM IP
-      set_fact:
-        vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
-
     - name: Resolve ground station hostname
       command: >-
         oc get route ground-station -n {{ ocp_namespace }}
@@ -35,11 +24,31 @@
       register: gs_route
       changed_when: false
 
-    - name: Confirm satellite VM (offline image) is reachable
+    - name: Start VM if shut off (KVM shuts down on guest reboot)
+      command: virsh --connect qemu:///system start {{ vm_name }}
+      become: true
+      failed_when: false
+      changed_when: true
+
+    - name: Wait for VM to come up and get an IP
+      command: >-
+        virsh --connect qemu:///system domifaddr {{ vm_name }}
+      register: domifaddr
+      become: true
+      changed_when: false
+      until: domifaddr.rc == 0 and domifaddr.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')
+      retries: 18
+      delay: 10
+
+    - name: Parse VM IP
+      set_fact:
+        vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
+
+    - name: Wait for SSH to be ready
       wait_for:
         host: "{{ vm_ip }}"
         port: 22
-        timeout: 15
+        timeout: 30
 
     # ── Restore connectivity ──────────────────────────────────────────────────
 
