@@ -6,7 +6,7 @@ Ansible playbook that stands up the full [satellite-demo](https://github.com/swa
 
 1. **OCP setup** — creates the namespace, Skupper site, listener, and AccessGrant
 2. **Ground station deploy** — in-cluster build and deploy of the ground station pod + MaaS secret
-3. **Bootc image build** — builds two satellite images: `offline` (Ollama + phi4-mini) then `online` (EDA DDIL detector); Ollama and the model are installed automatically by the preflight role on first run
+3. **Bootc image build** — builds two satellite images: `offline` (Ollama + llama3.2:1b) then `online` (EDA DDIL detector); Ollama and the model are installed automatically by the preflight role on first run
 4. **qcow2 conversion** — runs bootc-image-builder to produce the VM disk image from the online image
 5. **VM deploy** — deploys the KVM VM with cloud-init (injects live Skupper token)
 

@@ -46,7 +46,7 @@
     mode: '0755'
     remote_src: true
 
-- name: Stage phi4-mini model files into build context
+- name: Stage {{ ollama_model }} model files into build context
   synchronize:
     src: "{{ lookup('env', 'HOME') }}/.ollama/models/"
     dest: "{{ satellite_demo_src }}/build/ollama-models/"

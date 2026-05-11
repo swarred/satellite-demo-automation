@@ -41,8 +41,8 @@
     that: containerfile_stat.stat.exists
     fail_msg: "Containerfile not found in {{ satellite_demo_src }} — is satellite_demo_src correct?"
 
-# ── Ollama + phi4-mini (required for offline satellite image build) ────────────
-# Install Ollama and pull phi4-mini if not already present.
+# ── Ollama + llama3.2:1b (required for offline satellite image build) ─────────
+# Install Ollama and pull the model if not already present.
 # The image_build role copies these from the host into the build context
 # so no network access is needed inside the container build.
 
@@ -55,14 +55,14 @@
   shell: curl -fsSL https://ollama.com/install.sh | sh
   when: not ollama_binary.stat.exists
 
-- name: Check if phi4-mini model is already pulled
+- name: Check if {{ ollama_model }} is already pulled
   stat:
-    path: "{{ lookup('env', 'HOME') }}/.ollama/models/manifests/registry.ollama.ai/library/phi4-mini"
-  register: phi4_mini_manifest
+    path: "{{ lookup('env', 'HOME') }}/.ollama/models/manifests/registry.ollama.ai/library/{{ ollama_model.split(':')[0] }}"
+  register: ollama_model_manifest
 
 - name: Start Ollama service temporarily to pull model
   shell: ollama serve &>/tmp/ollama-preflight.log &
-  when: not phi4_mini_manifest.stat.exists
+  when: not ollama_model_manifest.stat.exists
 
 - name: Wait for Ollama to be ready
   uri:
@@ -72,8 +72,8 @@
   until: ollama_ready.status == 200
   retries: 15
   delay: 2
-  when: not phi4_mini_manifest.stat.exists
+  when: not ollama_model_manifest.stat.exists
 
-- name: Pull phi4-mini model (~2.5 GB — first run only)
+- name: Pull {{ ollama_model }} (~900 MB — first run only)
   command: ollama pull {{ ollama_model }}
-  when: not phi4_mini_manifest.stat.exists
+  when: not ollama_model_manifest.stat.exists

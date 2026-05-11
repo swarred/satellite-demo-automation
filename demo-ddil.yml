@@ -116,7 +116,7 @@
     # Waits up to 3 minutes for the first 2 classifications. If the satellite
     # isn't over the AOI yet this may time out — that's fine, the demo continues.
 
-    - name: "[OFFLINE] Watching phi4-mini classify first detections autonomously..."
+    - name: "[OFFLINE] Watching llama3.2:1b classify first detections autonomously..."
       shell: "sshpass -p satellite ssh {{ ssh_opts }} -t demo@{{ vm_ip }} 'sudo timeout 180 journalctl -fu satellite-local-analysis --no-hostname | grep --line-buffered -m 2 Classified'"
       register: first_classifications
       changed_when: false
