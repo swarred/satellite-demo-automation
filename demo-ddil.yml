@@ -73,7 +73,7 @@
 
     # ── Wait for reboot cycle ────────────────────────────────────────────────
 
-    - name: "[BOOTC] Waiting for VM to reboot into offline image..."
+    - name: "[BOOTC] Waiting for VM to go down for reboot..."
       wait_for:
         host: "{{ vm_ip }}"
         port: 22
@@ -81,19 +81,25 @@
         timeout: 90
       ignore_errors: true
 
-    - name: "[BOOTC] Starting VM after reboot (KVM restores power)"
-      command: virsh --connect qemu:///system start {{ vm_name }}
+    - name: "[BOOTC] Starting VM — retrying until SSH responds (KVM may shut off on guest reboot)"
+      shell: |
+        for i in $(seq 1 12); do
+          STATE=$(virsh --connect qemu:///system domstate {{ vm_name }} 2>/dev/null | tr -d ' ')
+          if [ "$STATE" = "shutoff" ]; then
+            virsh --connect qemu:///system start {{ vm_name }} 2>/dev/null || true
+          fi
+          sleep 10
+          if nc -z -w3 {{ vm_ip }} 22 2>/dev/null; then
+            echo "SSH is up"
+            exit 0
+          fi
+        done
+        echo "Timeout waiting for SSH"
+        exit 1
       become: true
-      failed_when: false
       changed_when: true
 
-    - name: "[BOOTC] Waiting for satellite to come back online..."
-      wait_for:
-        host: "{{ vm_ip }}"
-        port: 22
-        timeout: 120
-
-    - name: Clear stale SSH known_hosts entry after reboot (new host key)
+    - name: Clear stale SSH known_hosts entry after reboot
       command: ssh-keygen -R {{ vm_ip }}
       failed_when: false
       changed_when: true
