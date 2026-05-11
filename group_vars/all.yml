@@ -27,4 +27,4 @@ bootc_image_builder_image: "ghcr.io/osbuild/bootc-image-builder:latest"
 local_registry_port: 5000
 local_registry_host: "192.168.122.1"
 local_registry_name: "satellite-registry"
-ollama_model: "phi4-mini:latest"
+ollama_model: "llama3.2:1b"
