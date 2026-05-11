@@ -1,0 +1,24 @@
+---
+- name: Satellite Demo — Teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  pre_tasks:
+    - name: Fetch OCP API URL from current oc context
+      command: oc whoami --show-server
+      register: _oc_server
+      changed_when: false
+
+    - name: Fetch OCP token from current oc context
+      command: oc whoami -t
+      register: _oc_token
+      changed_when: false
+
+    - name: Set OCP connection facts
+      set_fact:
+        ocp_api_url: "{{ _oc_server.stdout | trim }}"
+        ocp_token: "{{ _oc_token.stdout | trim }}"
+
+  roles:
+    - teardown

@@ -1,0 +1,107 @@
+---
+- name: Template cloud-init user-data with skupper token
+  template:
+    src: user-data.j2
+    dest: /tmp/satellite-demo-user-data
+    mode: '0644'
+
+- name: Destroy existing VM (ignore if not running)
+  command: virsh --connect qemu:///system destroy {{ vm_name }}
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Undefine existing VM (ignore if not defined)
+  command: virsh --connect qemu:///system undefine {{ vm_name }}
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Copy qcow2 to libvirt images directory
+  copy:
+    src: "{{ bootc_output_dir }}/qcow2/disk.qcow2"
+    dest: "{{ vm_image_dest }}"
+    remote_src: true
+  become: true
+
+- name: Deploy VM with virt-install
+  command: >-
+    virt-install
+    --connect qemu:///system
+    --name {{ vm_name }}
+    --memory {{ vm_memory }}
+    --vcpus {{ vm_vcpus }}
+    --disk {{ vm_image_dest }},format=qcow2,bus=virtio
+    --import
+    --os-variant centos-stream10
+    --network network=default,model=virtio
+    --graphics none
+    --console pty,target_type=serial
+    --noautoconsole
+    --cloud-init user-data=/tmp/satellite-demo-user-data
+  become: true
+  changed_when: true
+
+- name: Wait for VM to receive IP address (DHCP lease)
+  shell: >-
+    virsh --connect qemu:///system domifaddr {{ vm_name }} 2>/dev/null
+    | awk '/ipv4/ {print $4}' | cut -d/ -f1
+  become: true
+  register: vm_ip_result
+  until: vm_ip_result.stdout | trim | length > 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Store VM IP
+  set_fact:
+    vm_ip: "{{ vm_ip_result.stdout | trim }}"
+
+- name: Wait for SSH to be available on VM
+  wait_for:
+    host: "{{ vm_ip }}"
+    port: 22
+    timeout: 120
+
+- name: Clean up temporary user-data file
+  file:
+    path: /tmp/satellite-demo-user-data
+    state: absent
+
+- name: Wait for skupper-init to link (poll .linked file, up to 3 min)
+  shell: >-
+    sshpass -p satellite ssh -o StrictHostKeyChecking=no
+    demo@{{ vm_ip }}
+    "sudo test -f /var/lib/skupper/.linked && echo linked || echo unlinked"
+  register: link_file_check
+  until: link_file_check.stdout == 'linked'
+  retries: 18
+  delay: 10
+  changed_when: false
+  failed_when: false
+
+- name: Check whether skupper link was established
+  shell: >-
+    sshpass -p satellite ssh -o StrictHostKeyChecking=no
+    demo@{{ vm_ip }}
+    "sudo test -f /var/lib/skupper/.linked && echo linked || echo unlinked"
+  register: link_status
+  changed_when: false
+
+- name: Recover skupper link (skupper-init failed on first boot)
+  shell: |
+    sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }} bash -s <<'ENDSSH'
+    set -e
+    sudo /usr/local/bin/skupper token redeem /etc/skupper/token.yaml -p linux -n satellite-vm
+    sudo /usr/local/bin/skupper system apply -p linux -n satellite-vm -f /etc/skupper/connector.yaml
+    sudo /usr/local/bin/skupper system reload -p linux -n satellite-vm
+    sudo touch /var/lib/skupper/.linked
+    ENDSSH
+  when: link_status.stdout == 'unlinked'
+
+- name: Display VM connection info
+  debug:
+    msg:
+      - "VM is up at {{ vm_ip }}"
+      - "SSH: ssh demo@{{ vm_ip }}  (password: satellite)"
+      - "skupper-init.service will link to OCP in the background — allow ~30 seconds"

@@ -1,0 +1,42 @@
+---
+- name: Check required binaries
+  command: which {{ item }}
+  changed_when: false
+  failed_when: false
+  register: which_results
+  loop:
+    - podman
+    - oc
+    - virsh
+    - sshpass
+
+- name: Assert all required binaries are present
+  assert:
+    that: item.rc == 0
+    fail_msg: >
+      Required binary '{{ item.item }}' not found.
+      Please install it and re-run.
+  loop: "{{ which_results.results }}"
+
+- name: Verify satellite-demo source directory exists
+  stat:
+    path: "{{ satellite_demo_src }}"
+  register: demo_src_stat
+
+- name: Assert satellite-demo source exists
+  assert:
+    that: demo_src_stat.stat.isdir is defined and demo_src_stat.stat.isdir
+    fail_msg: >
+      satellite-demo source not found at {{ satellite_demo_src }}.
+      Set satellite_demo_src to the correct path:
+        ansible-playbook site.yml -e satellite_demo_src=/path/to/satellite-demo
+
+- name: Verify satellite-demo Containerfile exists
+  stat:
+    path: "{{ satellite_demo_src }}/Containerfile"
+  register: containerfile_stat
+
+- name: Assert Containerfile is present
+  assert:
+    that: containerfile_stat.stat.exists
+    fail_msg: "Containerfile not found in {{ satellite_demo_src }} — is satellite_demo_src correct?"

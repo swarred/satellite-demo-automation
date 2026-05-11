@@ -1,0 +1,40 @@
+---
+- name: Ensure output directory exists
+  file:
+    path: "{{ bootc_output_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Load satellite-sim image into root container storage
+  command: podman load -i /tmp/satellite-sim.tar
+  become: true
+  changed_when: true
+
+- name: Convert bootc image to qcow2 (takes several minutes)
+  command: >-
+    podman run --rm --privileged
+    -v {{ bootc_output_dir }}:/output
+    -v /var/lib/containers/storage:/var/lib/containers/storage
+    {{ bootc_image_builder_image }}
+    --type qcow2
+    localhost/{{ bootc_image_tag }}
+  become: true
+  changed_when: true
+
+- name: Remove image archive
+  file:
+    path: /tmp/satellite-sim.tar
+    state: absent
+
+- name: Verify qcow2 was created
+  stat:
+    path: "{{ bootc_output_dir }}/qcow2/disk.qcow2"
+  register: qcow2_stat
+
+- name: Assert qcow2 exists
+  assert:
+    that: qcow2_stat.stat.exists
+    fail_msg: >
+      qcow2 not found at {{ bootc_output_dir }}/qcow2/disk.qcow2
+      — check bootc-image-builder output above.

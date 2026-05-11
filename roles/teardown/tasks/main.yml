@@ -1,0 +1,46 @@
+---
+- name: Log in to OCP
+  command: >-
+    oc login {{ ocp_api_url }}
+    --token={{ ocp_token }}
+    --insecure-skip-tls-verify=true
+  no_log: true
+  changed_when: true
+
+- name: Delete OCP namespace (removes all resources including skupper site)
+  command: >-
+    oc delete project {{ ocp_namespace }}
+    --ignore-not-found=true
+  changed_when: true
+
+- name: Wait for namespace to be fully deleted
+  command: >-
+    oc wait namespace/{{ ocp_namespace }}
+    --for=delete
+    --timeout=120s
+  failed_when: false
+
+- name: Destroy VM (ignore if not running)
+  command: virsh --connect qemu:///system destroy {{ vm_name }}
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Undefine VM (ignore if not defined)
+  command: virsh --connect qemu:///system undefine {{ vm_name }}
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Remove VM disk image
+  file:
+    path: "{{ vm_image_dest }}"
+    state: absent
+  become: true
+
+- name: Teardown complete
+  debug:
+    msg:
+      - "OCP namespace '{{ ocp_namespace }}' deleted"
+      - "VM '{{ vm_name }}' destroyed and undefined"
+      - "Ready to re-run: ansible-playbook site.yml"

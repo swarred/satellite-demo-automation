@@ -1,0 +1,57 @@
+---
+- name: Apply ImageStream
+  command: >-
+    oc apply -f {{ role_path }}/files/imagestream.yaml
+    -n {{ ocp_namespace }}
+
+- name: Apply BuildConfig
+  command: >-
+    oc apply -f {{ role_path }}/files/buildconfig.yaml
+    -n {{ ocp_namespace }}
+
+- name: Apply ground station k8s manifests (Deployment, Service, Route)
+  command: >-
+    oc apply -f {{ satellite_demo_src }}/ground-station/k8s/
+    -n {{ ocp_namespace }}
+
+- name: Apply MaaS credentials secret (create or update)
+  shell: |
+    oc create secret generic maas-credentials \
+      --from-literal=url="{{ maas_url }}" \
+      --from-literal=key="{{ maas_key }}" \
+      -n {{ ocp_namespace }} \
+      --dry-run=client -o yaml | oc apply -f -
+  no_log: true
+  changed_when: true
+
+- name: Build ground station image in-cluster (uploads local source)
+  command: >-
+    oc start-build ground-station
+    --from-dir={{ satellite_demo_src }}/ground-station
+    --follow
+    -n {{ ocp_namespace }}
+  changed_when: true
+
+- name: Rollout restart to pick up new image
+  command: >-
+    oc rollout restart deployment/ground-station
+    -n {{ ocp_namespace }}
+  changed_when: true
+
+- name: Wait for ground station rollout to complete
+  command: >-
+    oc rollout status deployment/ground-station
+    -n {{ ocp_namespace }}
+    --timeout=180s
+
+- name: Get ground station route host
+  command: >-
+    oc get route ground-station
+    -n {{ ocp_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: route_host
+  changed_when: false
+
+- name: Display ground station URL
+  debug:
+    msg: "Ground station: https://{{ route_host.stdout }}"

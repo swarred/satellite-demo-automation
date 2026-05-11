@@ -1,0 +1,121 @@
+---
+- name: Log in to OCP
+  command: >-
+    oc login {{ ocp_api_url }}
+    --token={{ ocp_token }}
+    --insecure-skip-tls-verify=true
+  no_log: true
+  changed_when: true
+
+- name: Verify skupper operator CRDs are installed
+  command: oc get crd accessgrants.skupper.io
+  changed_when: false
+  register: skupper_crd
+  failed_when: skupper_crd.rc != 0
+
+- name: Ensure OCP project exists
+  command: oc new-project {{ ocp_namespace }}
+  register: new_project
+  failed_when:
+    - new_project.rc != 0
+    - "'already exists' not in new_project.stderr"
+  changed_when: new_project.rc == 0
+
+- name: Apply skupper Site CR
+  command: >-
+    oc apply -f {{ role_path }}/files/skupper-site.yaml
+    -n {{ ocp_namespace }}
+
+- name: Apply skupper Listener CR (exposes satellite-alerts service in namespace)
+  command: >-
+    oc apply -f {{ role_path }}/files/skupper-listener.yaml
+    -n {{ ocp_namespace }}
+
+- name: Wait for skupper-site-ca Secret (controller has settled, no UID race)
+  command: oc get secret skupper-site-ca -n {{ ocp_namespace }}
+  register: site_ca_check
+  until: site_ca_check.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Wait for skupper-site-server Secret (cert chain ready for inter-router)
+  command: oc get secret skupper-site-server -n {{ ocp_namespace }}
+  register: site_server_check
+  until: site_server_check.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Restart skupper-router so it picks up skupper-site-server cert at startup
+  command: >-
+    oc rollout restart deployment/skupper-router
+    -n {{ ocp_namespace }}
+
+- name: Wait for skupper-router rollout with fresh cert
+  command: >-
+    oc rollout status deployment/skupper-router
+    -n {{ ocp_namespace }}
+    --timeout=120s
+
+- name: Delete existing AccessGrant to ensure fresh credentials
+  command: >-
+    oc delete accessgrant {{ skupper_grant_name }}
+    -n {{ ocp_namespace }}
+  failed_when: false
+  changed_when: true
+
+- name: Write AccessGrant manifest
+  copy:
+    content: |
+      apiVersion: skupper.io/v2alpha1
+      kind: AccessGrant
+      metadata:
+        name: {{ skupper_grant_name }}
+      spec:
+        redemptionsAllowed: {{ skupper_grant_redemptions }}
+        expirationWindow: {{ skupper_grant_expiration }}
+    dest: /tmp/satellite-demo-access-grant.yaml
+    mode: '0600'
+
+- name: Apply AccessGrant
+  command: >-
+    oc apply -n {{ ocp_namespace }}
+    -f /tmp/satellite-demo-access-grant.yaml
+
+- name: Wait for AccessGrant to be Ready
+  command: >-
+    oc wait accessgrant/{{ skupper_grant_name }}
+    --for=condition=Ready
+    -n {{ ocp_namespace }}
+    --timeout=120s
+
+- name: Fetch AccessGrant JSON
+  command: >-
+    oc get accessgrant/{{ skupper_grant_name }}
+    -n {{ ocp_namespace }}
+    -o json
+  register: access_grant_json
+  changed_when: false
+
+- name: Extract AccessGrant token fields
+  set_fact:
+    skupper_grant_url: "{{ (access_grant_json.stdout | from_json).status.url }}"
+    skupper_grant_code: "{{ (access_grant_json.stdout | from_json).status.code }}"
+    skupper_grant_ca: "{{ (access_grant_json.stdout | from_json).status.ca }}"
+
+- name: Assert AccessGrant fields are populated
+  assert:
+    that:
+      - skupper_grant_url | length > 0
+      - skupper_grant_code | length > 0
+      - skupper_grant_ca | length > 0
+    fail_msg: >
+      AccessGrant status fields are empty — skupper operator may not have provisioned
+      the grant server yet. Check:
+        oc describe accessgrant/{{ skupper_grant_name }} -n {{ ocp_namespace }}
+
+- name: Clean up AccessGrant manifest
+  file:
+    path: /tmp/satellite-demo-access-grant.yaml
+    state: absent

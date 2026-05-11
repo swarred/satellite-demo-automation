@@ -1,0 +1,22 @@
+# ----- OCP / Skupper ----------------------------------------------------------
+ocp_namespace: satellite-ground
+
+skupper_grant_name: satellite-vm-token
+skupper_grant_redemptions: 5
+skupper_grant_expiration: 168h
+
+# ----- VM ---------------------------------------------------------------------
+vm_name: satellite-sim
+vm_memory: 2048
+vm_vcpus: 2
+vm_image_dest: /var/lib/libvirt/images/satellite-sim.qcow2
+
+# ----- Source paths -----------------------------------------------------------
+# Path to the satellite-demo source repo.
+# Default: sibling directory alongside this repo.
+# Override: ansible-playbook site.yml -e satellite_demo_src=/path/to/satellite-demo
+satellite_demo_src: "{{ playbook_dir }}/../satellite-demo"
+
+bootc_output_dir: "{{ satellite_demo_src }}/output"
+bootc_image_tag: "satellite-sim:latest"
+bootc_image_builder_image: "ghcr.io/osbuild/bootc-image-builder:latest"

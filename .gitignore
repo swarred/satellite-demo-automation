@@ -1,0 +1,9 @@
+# Ansible retry files
+*.retry
+
+# Generated cloud-init (written at deploy time by vm_deploy role)
+/tmp/satellite-demo-*.yaml
+
+# Editor / OS
+.DS_Store
+*.swp
