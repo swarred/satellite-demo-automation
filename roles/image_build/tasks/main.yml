@@ -1,17 +1,83 @@
 ---
-- name: Build satellite-sim container image
+# ── Local registry ─────────────────────────────────────────────────────────────
+# registry:2 serves both satellite images to the VM over the KVM bridge.
+# The VM uses this registry for bootc switch during DDIL (OCP routes are blocked
+# but the KVM bridge at 192.168.122.1 remains reachable).
+
+- name: Pull registry:2 image for local registry
+  command: podman pull docker.io/library/registry:2
+  changed_when: false
+
+- name: Stop existing local registry (if running)
+  command: podman rm -f {{ local_registry_name }}
+  failed_when: false
+  changed_when: false
+
+- name: Start local image registry on KVM bridge
+  command: >-
+    podman run -d
+    --name {{ local_registry_name }}
+    -p {{ local_registry_port }}:5000
+    --restart always
+    docker.io/library/registry:2
+  changed_when: true
+
+# ── Offline image ──────────────────────────────────────────────────────────────
+# Built first so the online image can reference the same local registry endpoint.
+# This build downloads Ollama + phi4-mini (~2.5 GB) — expect 15-20 minutes.
+
+- name: Build satellite-sim offline image (Ollama + phi4-mini — takes ~20 min)
   command: >-
     podman build
-    -t {{ bootc_image_tag }}
+    -f {{ satellite_demo_src }}/Containerfile.offline
+    -t satellite-sim:offline
     {{ satellite_demo_src }}
   changed_when: true
+
+- name: Push offline image to local registry
+  command: >-
+    podman push
+    --tls-verify=false
+    satellite-sim:offline
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:offline
+  changed_when: true
+
+# ── Online image ───────────────────────────────────────────────────────────────
+# Built after ocp_deploy so the ground station route URL is known and can be
+# baked into the EDA rulebook vars at build time.
+
+- name: Build satellite-sim online image with ground station URL
+  command: >-
+    podman build
+    -f {{ satellite_demo_src }}/Containerfile
+    -t {{ bootc_image_tag }}
+    --build-arg GROUND_STATION_URL=https://{{ route_host.stdout }}
+    {{ satellite_demo_src }}
+  changed_when: true
+
+- name: Tag online image for local registry
+  command: >-
+    podman tag
+    {{ bootc_image_tag }}
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:online
+  changed_when: true
+
+- name: Push online image to local registry
+  command: >-
+    podman push
+    --tls-verify=false
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:online
+  changed_when: true
+
+# ── Archive for bootc-image-builder ───────────────────────────────────────────
+# The online image is converted to qcow2 for the initial VM deploy.
 
 - name: Remove any existing image archive
   file:
     path: /tmp/satellite-sim.tar
     state: absent
 
-- name: Save image to archive for root import
+- name: Save online image to archive for root import
   command: >-
     podman save {{ bootc_image_tag }}
     -o /tmp/satellite-sim.tar

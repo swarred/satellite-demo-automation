@@ -20,3 +20,11 @@ satellite_demo_src: "{{ playbook_dir }}/../satellite-demo"
 bootc_output_dir: "{{ satellite_demo_src }}/output"
 bootc_image_tag: "satellite-sim:latest"
 bootc_image_builder_image: "ghcr.io/osbuild/bootc-image-builder:latest"
+
+# ----- Local registry (DDIL bootc switch) -------------------------------------
+# registry:2 runs on the build host at port 5000, reachable from the satellite
+# VM over the KVM bridge (192.168.122.1:5000) even when OCP routes are blocked.
+local_registry_port: 5000
+local_registry_host: "192.168.122.1"
+local_registry_name: "satellite-registry"
+ollama_model: "phi4-mini:latest"
