@@ -7,7 +7,7 @@ skupper_grant_expiration: 168h
 
 # ----- VM ---------------------------------------------------------------------
 vm_name: satellite-sim
-vm_memory: 2048
+vm_memory: 5120
 vm_vcpus: 2
 vm_image_dest: /var/lib/libvirt/images/satellite-sim.qcow2
 
