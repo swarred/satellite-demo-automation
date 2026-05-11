@@ -23,16 +23,41 @@
   changed_when: true
 
 # ── Offline image ──────────────────────────────────────────────────────────────
-# Built first so the online image can reference the same local registry endpoint.
-# This build downloads Ollama + phi4-mini (~2.5 GB) — expect 15-20 minutes.
+# Stage Ollama binary and model files from the build host into the build context
+# so the Containerfile.offline can COPY them in — no network needed during build.
 
-- name: Build satellite-sim offline image (Ollama + phi4-mini — takes ~20 min)
+- name: Create build staging directory
+  file:
+    path: "{{ satellite_demo_src }}/build"
+    state: directory
+    mode: '0755'
+
+- name: Stage Ollama binary into build context
+  copy:
+    src: /usr/local/bin/ollama
+    dest: "{{ satellite_demo_src }}/build/ollama"
+    mode: '0755'
+    remote_src: true
+
+- name: Stage phi4-mini model files into build context
+  synchronize:
+    src: "{{ ansible_env.HOME }}/.ollama/models/"
+    dest: "{{ satellite_demo_src }}/build/ollama-models/"
+    archive: true
+    delete: true
+
+- name: Build satellite-sim offline image
   command: >-
     podman build
     -f {{ satellite_demo_src }}/Containerfile.offline
     -t satellite-sim:offline
     {{ satellite_demo_src }}
   changed_when: true
+
+- name: Remove build staging directory
+  file:
+    path: "{{ satellite_demo_src }}/build"
+    state: absent
 
 - name: Push offline image to local registry
   command: >-
