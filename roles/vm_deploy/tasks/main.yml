@@ -63,6 +63,14 @@
     port: 22
     timeout: 120
 
+# Clear any stale known_hosts entry for this IP — the VM is always a fresh
+# deployment with a new host key; StrictHostKeyChecking=no alone doesn't
+# help when a key has *changed*, so bypass known_hosts entirely.
+- name: Remove stale SSH known_hosts entry for VM IP
+  command: ssh-keygen -R {{ vm_ip }}
+  failed_when: false
+  changed_when: true
+
 - name: Clean up temporary user-data file
   file:
     path: /tmp/satellite-demo-user-data
@@ -70,7 +78,9 @@
 
 - name: Wait for skupper-init to link (poll .linked file, up to 3 min)
   shell: >-
-    sshpass -p satellite ssh -o StrictHostKeyChecking=no
+    sshpass -p satellite ssh
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
     demo@{{ vm_ip }}
     "sudo test -f /var/lib/skupper/.linked && echo linked || echo unlinked"
   register: link_file_check
@@ -82,7 +92,9 @@
 
 - name: Check whether skupper link was established
   shell: >-
-    sshpass -p satellite ssh -o StrictHostKeyChecking=no
+    sshpass -p satellite ssh
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
     demo@{{ vm_ip }}
     "sudo test -f /var/lib/skupper/.linked && echo linked || echo unlinked"
   register: link_status
@@ -90,7 +102,10 @@
 
 - name: Recover skupper link (skupper-init failed on first boot)
   shell: |
-    sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }} bash -s <<'ENDSSH'
+    sshpass -p satellite ssh \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      demo@{{ vm_ip }} bash -s <<'ENDSSH'
     set -e
     sudo /usr/local/bin/skupper token redeem /etc/skupper/token.yaml -p linux -n satellite-vm
     sudo /usr/local/bin/skupper system apply -p linux -n satellite-vm -f /etc/skupper/connector.yaml
