@@ -136,12 +136,11 @@
     - name: "[LINK] Waiting for Skupper link to re-establish..."
       shell: >-
         sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "for i in $(seq 1 18); do
-           sudo test -f /var/lib/skupper/.linked && echo linked && exit 0;
-           sleep 10;
-         done; echo unlinked"
+        "timeout 180 sh -c 'until sudo test -f /var/lib/skupper/.linked; do sleep 10; done'
+         && echo linked || echo unlinked"
       register: link_status
       changed_when: false
+      failed_when: false
 
     - name: "[LINK] Ground station link status"
       debug:
