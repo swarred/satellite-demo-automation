@@ -53,6 +53,28 @@
     archive: true
     delete: true
 
+# ── Generate registry config and bootc switch playbooks from templates ──────────
+# These files contain the local registry address (local_registry_host:port) and
+# must not be committed to git with a hardcoded IP.
+
+- name: Generate local registry config for satellite images
+  template:
+    src: local-registry.conf.j2
+    dest: "{{ satellite_demo_src }}/containers/local-registry.conf"
+    mode: '0644'
+
+- name: Generate bootc-switch-offline playbook
+  template:
+    src: bootc-switch-offline.yml.j2
+    dest: "{{ satellite_demo_src }}/eda/bootc-switch-offline.yml"
+    mode: '0644'
+
+- name: Generate bootc-switch-online playbook
+  template:
+    src: bootc-switch-online.yml.j2
+    dest: "{{ satellite_demo_src }}/eda/bootc-switch-online.yml"
+    mode: '0644'
+
 - name: Build satellite-sim offline image with ground station URL
   command: >-
     podman build
