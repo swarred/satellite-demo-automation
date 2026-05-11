@@ -53,13 +53,15 @@ ansible-playbook site.yml --ask-become-pass
 
 `--ask-become-pass` is required for the root steps (bootc-image-builder, virt-install).
 
+> **Firewall notice:** The playbook opens port `5000/tcp` in the host's `libvirt` firewall zone so the satellite VM can pull bootc images from the build host registry during DDIL switching. This zone is scoped to the KVM bridge (`virbr0`) and does **not** expose the port on external interfaces. If your environment has a stricter security posture, review the `image_build` role before deploying. The teardown playbook closes this port automatically.
+
 ## Teardown
 
 ```bash
 ansible-playbook teardown.yml --ask-become-pass
 ```
 
-Deletes the OCP namespace and destroys + undefines the KVM VM.
+Deletes the OCP namespace, destroys the KVM VM, stops the local registry, and closes the firewall port opened during deploy.
 
 ## Configuration
 

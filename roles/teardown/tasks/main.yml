@@ -38,9 +38,25 @@
     state: absent
   become: true
 
+- name: Stop local image registry
+  command: podman rm -f {{ local_registry_name }}
+  failed_when: false
+  changed_when: true
+
+- name: Close local registry port in libvirt firewall zone
+  ansible.posix.firewalld:
+    zone: libvirt
+    port: "{{ local_registry_port }}/tcp"
+    state: disabled
+    permanent: true
+    immediate: true
+  become: true
+  failed_when: false
+
 - name: Teardown complete
   debug:
     msg:
       - "OCP namespace '{{ ocp_namespace }}' deleted"
       - "VM '{{ vm_name }}' destroyed and undefined"
+      - "Local registry stopped, firewall port {{ local_registry_port }} closed"
       - "Ready to re-run: ansible-playbook site.yml"
