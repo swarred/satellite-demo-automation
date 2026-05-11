@@ -128,3 +128,17 @@
     - name: "[OFFLINE] Autonomous classification active — satellite mission continues"
       debug:
         msg: "{{ first_classifications.stdout_lines }}"
+
+    - name: Next steps
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════════"
+          - "  Satellite is operating autonomously in DDIL mode."
+          - "  Ground station UI shows: LINK DOWN + AUTONOMOUS OPS ACTIVE"
+          - ""
+          - "  To watch live classifications in a second terminal:"
+          - "  ./scripts/demo-watch-offline.sh"
+          - ""
+          - "  When ready to restore connectivity:"
+          - "  ansible-playbook demo-restore.yml --ask-become-pass"
+          - "═══════════════════════════════════════════════════════════"
