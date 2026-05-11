@@ -104,9 +104,7 @@
     - name: "[OFFLINE] Confirming offline image is booted"
       shell: >-
         sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
-        "sudo bootc status --json |
-         python3 -c \"import json,sys; d=json.load(sys.stdin);
-         print(d['status']['booted']['image']['image']['image'])\""
+        "sudo bootc status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"status\"][\"booted\"][\"image\"][\"image\"][\"image\"])'"
       register: booted_image
       changed_when: false
 
