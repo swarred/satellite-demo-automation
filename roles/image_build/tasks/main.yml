@@ -55,11 +55,12 @@
     archive: true
     delete: true
 
-- name: Build satellite-sim offline image
+- name: Build satellite-sim offline image with ground station URL
   command: >-
     podman build
     -f {{ satellite_demo_src }}/Containerfile.offline
     -t satellite-sim:offline
+    --build-arg GROUND_STATION_URL=https://{{ route_host.stdout }}
     {{ satellite_demo_src }}
   changed_when: true
 
