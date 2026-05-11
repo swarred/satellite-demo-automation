@@ -22,14 +22,12 @@
     docker.io/library/registry:2
   changed_when: true
 
-- name: Open local registry port in libvirt firewall zone
-  ansible.posix.firewalld:
-    zone: libvirt
-    port: "{{ local_registry_port }}/tcp"
-    state: enabled
-    permanent: true
-    immediate: true
+- name: Open local registry port in libvirt firewall zone (permanent + immediate)
+  shell: |
+    firewall-cmd --zone=libvirt --add-port={{ local_registry_port }}/tcp --permanent
+    firewall-cmd --zone=libvirt --add-port={{ local_registry_port }}/tcp
   become: true
+  changed_when: true
 
 # ── Offline image ──────────────────────────────────────────────────────────────
 # Stage Ollama binary and model files from the build host into the build context
