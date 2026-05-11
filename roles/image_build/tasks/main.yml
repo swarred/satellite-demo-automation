@@ -41,7 +41,7 @@
 
 - name: Stage phi4-mini model files into build context
   synchronize:
-    src: "{{ ansible_env.HOME }}/.ollama/models/"
+    src: "{{ lookup('env', 'HOME') }}/.ollama/models/"
     dest: "{{ satellite_demo_src }}/build/ollama-models/"
     archive: true
     delete: true
