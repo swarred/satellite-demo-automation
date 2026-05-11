@@ -1,0 +1,130 @@
+---
+# demo-ddil.yml — Initiate DDIL autonomous mode demonstration
+#
+# Run this playbook to simulate a ground station blackout. Each task is a
+# beat in the demo narrative — the task name is what the audience reads while
+# Ansible waits for the event.
+#
+# Usage: ansible-playbook demo-ddil.yml --ask-become-pass
+#
+# After completion the satellite VM is running the offline bootc image with
+# Ollama + phi4-mini classifying alerts autonomously. Run demo-restore.yml
+# when ready to show the reconnect and offline alert sync.
+
+- name: DEMO — Simulate DDIL and observe autonomous satellite response
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    # ── Setup ────────────────────────────────────────────────────────────────
+
+    - name: Resolve satellite VM IP address
+      command: >-
+        virsh --connect qemu:///system domifaddr {{ vm_name }}
+      register: domifaddr
+      become: true
+      changed_when: false
+
+    - name: Parse VM IP
+      set_fact:
+        vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
+
+    - name: Resolve ground station hostname
+      command: >-
+        oc get route ground-station -n {{ ocp_namespace }}
+        -o jsonpath='{.spec.host}'
+      register: gs_route
+      changed_when: false
+
+    - name: Confirm satellite VM is reachable
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        timeout: 15
+
+    # ── Trigger DDIL ─────────────────────────────────────────────────────────
+
+    - name: "[DDIL] Break ground station link — Skupper stopped, UI shows LINK DOWN"
+      shell: >-
+        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
+        "sudo systemctl stop skupper-satellite-vm.service 2>/dev/null || true"
+      changed_when: true
+
+    - name: "[DDIL] Block ground station hostname — EDA url_check will fail immediately"
+      shell: |
+        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }} bash -s <<'ENDSSH'
+        sudo sed -i '/{{ gs_route.stdout }}/d' /etc/hosts
+        echo '127.0.0.1 {{ gs_route.stdout }}' | sudo tee -a /etc/hosts
+        ENDSSH
+      changed_when: true
+
+    # ── Watch EDA detect and respond ─────────────────────────────────────────
+    # This task blocks until the EDA rulebook fires. The audience watches
+    # "Waiting for EDA..." on screen for ~60s — then the output shows the
+    # exact moment the autonomous response triggered.
+
+    - name: "[EDA] Waiting for connectivity loss detection and autonomous bootc switch..."
+      shell: >-
+        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
+        "sudo journalctl -fu satellite-eda --no-hostname |
+         grep --line-buffered -m 1 'Offline image staged\|DDIL DETECTED'"
+      register: eda_trigger
+      changed_when: false
+
+    - name: "[EDA] Autonomous response confirmed — bootc switch to offline image triggered"
+      debug:
+        msg: "{{ eda_trigger.stdout_lines }}"
+
+    # ── Wait for reboot cycle ────────────────────────────────────────────────
+
+    - name: "[BOOTC] Waiting for VM to reboot into offline image..."
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        state: absent
+        timeout: 90
+      ignore_errors: true
+
+    - name: "[BOOTC] Starting VM after reboot (KVM restores power)"
+      command: virsh --connect qemu:///system start {{ vm_name }}
+      become: true
+      failed_when: false
+      changed_when: true
+
+    - name: "[BOOTC] Waiting for satellite to come back online..."
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        timeout: 120
+
+    # ── Confirm offline mode ─────────────────────────────────────────────────
+
+    - name: "[OFFLINE] Confirming offline image is booted"
+      shell: >-
+        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
+        "sudo bootc status --json |
+         python3 -c \"import json,sys; d=json.load(sys.stdin);
+         print(d['status']['booted']['image']['image']['image'])\""
+      register: booted_image
+      changed_when: false
+
+    - name: "[OFFLINE] Satellite is now operating autonomously — image confirmed"
+      debug:
+        msg: "Booted image: {{ booted_image.stdout }}"
+
+    # ── Show autonomous classification beginning ──────────────────────────────
+    # Blocks until the first 2 alerts are classified locally by phi4-mini.
+
+    - name: "[OFFLINE] Watching phi4-mini classify first detections autonomously..."
+      shell: >-
+        sshpass -p satellite ssh -o StrictHostKeyChecking=no demo@{{ vm_ip }}
+        "sudo journalctl -fu satellite-local-analysis --no-hostname |
+         grep --line-buffered -m 2 'Classified'"
+      register: first_classifications
+      changed_when: false
+
+    - name: "[OFFLINE] Autonomous classification active — satellite mission continues"
+      debug:
+        msg: "{{ first_classifications.stdout_lines }}"
