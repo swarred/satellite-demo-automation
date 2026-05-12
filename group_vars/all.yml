@@ -28,3 +28,7 @@ local_registry_port: 5000
 local_registry_host: "192.168.122.1"
 local_registry_name: "satellite-registry"
 ollama_model: "llama3.2:1b"
+# Where the Ollama service stores models. When Ollama runs as a system service
+# (installed via install.sh), models go to the ollama user's home, not ~/.ollama.
+# Override if your setup differs: -e ollama_models_dir=~/.ollama/models
+ollama_models_dir: "/usr/share/ollama/.ollama/models"

@@ -57,8 +57,9 @@
 
 - name: Check if {{ ollama_model }} is already pulled
   stat:
-    path: "{{ lookup('env', 'HOME') }}/.ollama/models/manifests/registry.ollama.ai/library/{{ ollama_model.split(':')[0] }}/{{ ollama_model.split(':')[1] }}"
+    path: "{{ ollama_models_dir }}/manifests/registry.ollama.ai/library/{{ ollama_model.split(':')[0] }}/{{ ollama_model.split(':')[1] }}"
   register: ollama_model_manifest
+  become: true
 
 - name: Start Ollama service temporarily to pull model
   shell: ollama serve &>/tmp/ollama-preflight.log &
