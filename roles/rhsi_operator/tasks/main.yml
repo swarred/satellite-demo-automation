@@ -1,0 +1,74 @@
+---
+- name: Log in to OCP
+  command: >-
+    oc login {{ ocp_api_url }}
+    --token={{ ocp_token }}
+    --insecure-skip-tls-verify=true
+  no_log: true
+  changed_when: true
+
+- name: Check if RHSI operator is already installed
+  command: oc get subscription skupper-operator -n service-interconnect
+  register: _rhsi_existing
+  failed_when: false
+  changed_when: false
+
+- name: Install RHSI operator
+  when: _rhsi_existing.rc != 0
+  block:
+    - name: Create service-interconnect namespace
+      shell: |
+        oc apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: service-interconnect
+        EOF
+      changed_when: true
+
+    - name: Apply RHSI OperatorGroup (AllNamespaces)
+      shell: |
+        oc apply -f - <<'EOF'
+        apiVersion: operators.coreos.com/v1
+        kind: OperatorGroup
+        metadata:
+          name: skupper-operator
+          namespace: service-interconnect
+        spec: {}
+        EOF
+      changed_when: true
+
+    - name: Apply RHSI Subscription
+      shell: |
+        oc apply -f - <<'EOF'
+        apiVersion: operators.coreos.com/v1alpha1
+        kind: Subscription
+        metadata:
+          name: skupper-operator
+          namespace: service-interconnect
+        spec:
+          channel: stable-2
+          name: skupper-operator
+          source: redhat-operators
+          sourceNamespace: openshift-marketplace
+        EOF
+      changed_when: true
+
+- name: Wait for RHSI CSV to reach Succeeded
+  shell: >-
+    oc get csv -n service-interconnect --no-headers
+    -o custom-columns=":metadata.name,:status.phase"
+    | grep skupper-operator | awk '{print $2}'
+  register: _csv_phase
+  until: _csv_phase.stdout.strip() == "Succeeded"
+  retries: 30
+  delay: 15
+  changed_when: false
+
+- name: Verify skupper CRDs are available
+  command: oc get crd accessgrants.skupper.io
+  changed_when: false
+
+- name: RHSI operator ready
+  debug:
+    msg: "Red Hat Service Interconnect operator is installed and ready ({{ _csv_phase.stdout | trim }})"

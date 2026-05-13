@@ -25,6 +25,7 @@
 
   roles:
     - preflight
+    - rhsi_operator   # install RHSI operator cluster-wide if not already present
     - skupper_grant   # OCP login, namespace, skupper site+listener, AccessGrant, extract token
     - ocp_deploy      # in-cluster build + deploy ground station + MaaS secret; captures route URL
     - image_build     # podman build both satellite images (offline first, then online with route URL)

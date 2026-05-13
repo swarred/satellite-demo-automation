@@ -7,12 +7,6 @@
   no_log: true
   changed_when: true
 
-- name: Verify skupper operator CRDs are installed
-  command: oc get crd accessgrants.skupper.io
-  changed_when: false
-  register: skupper_crd
-  failed_when: skupper_crd.rc != 0
-
 - name: Ensure OCP project exists
   command: oc new-project {{ ocp_namespace }}
   register: new_project

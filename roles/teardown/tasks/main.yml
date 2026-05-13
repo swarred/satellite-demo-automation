@@ -38,6 +38,36 @@
     state: absent
   become: true
 
+- name: Delete RHSI Subscription
+  command: >-
+    oc delete subscription skupper-operator
+    -n service-interconnect
+    --ignore-not-found=true
+  changed_when: true
+
+- name: Delete RHSI ClusterServiceVersion
+  shell: >-
+    oc delete csv
+    $(oc get csv -n service-interconnect --no-headers -o custom-columns=":metadata.name" | grep skupper-operator || true)
+    -n service-interconnect
+    --ignore-not-found=true
+  changed_when: true
+  failed_when: false
+
+- name: Delete service-interconnect namespace
+  command: >-
+    oc delete namespace service-interconnect
+    --ignore-not-found=true
+  changed_when: true
+
+- name: Wait for service-interconnect namespace to be deleted
+  command: >-
+    oc wait namespace/service-interconnect
+    --for=delete
+    --timeout=120s
+  failed_when: false
+  changed_when: false
+
 - name: Stop local image registry
   command: podman rm -f {{ local_registry_name }}
   failed_when: false
