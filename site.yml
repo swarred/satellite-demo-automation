@@ -26,7 +26,7 @@
   roles:
     - preflight
     - skupper_grant   # OCP login, namespace, skupper site+listener, AccessGrant, extract token
-    - image_build     # podman build satellite-sim image
-    - bootc_convert   # become: root — convert to qcow2 via bootc-image-builder
+    - ocp_deploy      # in-cluster build + deploy ground station + MaaS secret; captures route URL
+    - image_build     # podman build both satellite images (offline first, then online with route URL)
+    - bootc_convert   # become: root — convert online image to qcow2 via bootc-image-builder
     - vm_deploy       # become: root — virt-install + wait for SSH
-    - ocp_deploy      # in-cluster build + deploy ground station + MaaS secret

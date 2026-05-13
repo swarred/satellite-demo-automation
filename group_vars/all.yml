@@ -7,7 +7,7 @@ skupper_grant_expiration: 168h
 
 # ----- VM ---------------------------------------------------------------------
 vm_name: satellite-sim
-vm_memory: 2048
+vm_memory: 5120
 vm_vcpus: 2
 vm_image_dest: /var/lib/libvirt/images/satellite-sim.qcow2
 
@@ -20,3 +20,15 @@ satellite_demo_src: "{{ playbook_dir }}/../satellite-demo"
 bootc_output_dir: "{{ satellite_demo_src }}/output"
 bootc_image_tag: "satellite-sim:latest"
 bootc_image_builder_image: "ghcr.io/osbuild/bootc-image-builder:latest"
+
+# ----- Local registry (DDIL bootc switch) -------------------------------------
+# registry:2 runs on the build host at port 5000, reachable from the satellite
+# VM over the KVM bridge (192.168.122.1:5000) even when OCP routes are blocked.
+local_registry_port: 5000
+local_registry_host: "192.168.122.1"
+local_registry_name: "satellite-registry"
+ollama_model: "llama3.2:1b"
+# Where the Ollama service stores models. When Ollama runs as a system service
+# (installed via install.sh), models go to the ollama user's home, not ~/.ollama.
+# Override if your setup differs: -e ollama_models_dir=~/.ollama/models
+ollama_models_dir: "/usr/share/ollama/.ollama/models"

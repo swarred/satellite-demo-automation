@@ -5,10 +5,10 @@ Ansible playbook that stands up the full [satellite-demo](https://github.com/swa
 ## What it automates
 
 1. **OCP setup** — creates the namespace, Skupper site, listener, and AccessGrant
-2. **Bootc image build** — builds the satellite VM container image via podman
-3. **qcow2 conversion** — runs bootc-image-builder to produce the VM disk image
-4. **VM deploy** — deploys the KVM VM with cloud-init (injects live Skupper token)
-5. **Ground station deploy** — in-cluster build and deploy of the ground station pod + MaaS secret
+2. **Ground station deploy** — in-cluster build and deploy of the ground station pod + MaaS secret
+3. **Bootc image build** — builds two satellite images: `offline` (Ollama + llama3.2:1b) then `online` (EDA DDIL detector); Ollama and the model are installed automatically by the preflight role on first run
+4. **qcow2 conversion** — runs bootc-image-builder to produce the VM disk image from the online image
+5. **VM deploy** — deploys the KVM VM with cloud-init (injects live Skupper token)
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Ansible playbook that stands up the full [satellite-demo](https://github.com/swa
 
 ```bash
 pip install ansible
-ansible-galaxy collection install kubernetes.core
+ansible-galaxy collection install kubernetes.core ansible.posix
 ```
 
 **2. Configure MaaS credentials**
@@ -53,13 +53,15 @@ ansible-playbook site.yml --ask-become-pass
 
 `--ask-become-pass` is required for the root steps (bootc-image-builder, virt-install).
 
+> **Firewall notice:** The playbook opens port `5000/tcp` in the host's `libvirt` firewall zone so the satellite VM can pull bootc images from the build host registry during DDIL switching. This zone is scoped to the KVM bridge (`virbr0`) and does **not** expose the port on external interfaces. If your environment has a stricter security posture, review the `image_build` role before deploying. The teardown playbook closes this port automatically.
+
 ## Teardown
 
 ```bash
 ansible-playbook teardown.yml --ask-become-pass
 ```
 
-Deletes the OCP namespace and destroys + undefines the KVM VM.
+Deletes the OCP namespace, destroys the KVM VM, stops the local registry, and closes the firewall port opened during deploy.
 
 ## Configuration
 

@@ -24,6 +24,14 @@
   no_log: true
   changed_when: true
 
+- name: Wait for builder service account to be provisioned
+  command: oc get serviceaccount builder -n {{ ocp_namespace }}
+  register: _builder_sa
+  until: _builder_sa.rc == 0
+  retries: 18
+  delay: 10
+  changed_when: false
+
 - name: Build ground station image in-cluster (uploads local source)
   command: >-
     oc start-build ground-station

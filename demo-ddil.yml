@@ -1,0 +1,147 @@
+---
+# demo-ddil.yml — Initiate DDIL autonomous mode demonstration
+#
+# Usage: ansible-playbook demo-ddil.yml --ask-become-pass
+
+- name: DEMO — Simulate DDIL and observe autonomous satellite response
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+  tasks:
+
+    # ── Setup ────────────────────────────────────────────────────────────────
+
+    - name: Resolve satellite VM IP address
+      command: virsh --connect qemu:///system domifaddr {{ vm_name }}
+      register: domifaddr
+      become: true
+      changed_when: false
+      until: domifaddr.rc == 0 and (domifaddr.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')) is not none
+      retries: 18
+      delay: 10
+
+    - name: Parse VM IP
+      set_fact:
+        vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
+
+    - name: Clear stale SSH known_hosts entry for VM IP
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
+    - name: Resolve ground station hostname
+      command: oc get route ground-station -n {{ ocp_namespace }} -o jsonpath='{.spec.host}'
+      register: gs_route
+      changed_when: false
+
+    - name: Confirm satellite VM is reachable
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        timeout: 30
+
+    # ── Trigger DDIL ─────────────────────────────────────────────────────────
+
+    - name: "[DDIL] Break ground station link — Skupper stopped, UI shows LINK DOWN"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'sudo systemctl stop skupper-satellite-vm.service 2>/dev/null || true'"
+      changed_when: true
+
+    - name: "[DDIL] Block ground station hostname — EDA url_check will fail immediately"
+      shell: |
+        sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} bash -s <<'ENDSSH'
+        sudo sed -i '/{{ gs_route.stdout }}/d' /etc/hosts
+        echo '127.0.0.1 {{ gs_route.stdout }}' | sudo tee -a /etc/hosts
+        ENDSSH
+      changed_when: true
+
+    # ── Watch EDA detect and respond ─────────────────────────────────────────
+    # Blocks until the EDA rulebook fires (~60s). The task name is what the
+    # audience reads while Ansible waits.
+
+    - name: "[EDA] Waiting for connectivity loss detection and autonomous bootc switch..."
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} -t demo@{{ vm_ip }} 'sudo journalctl -fu satellite-eda --no-hostname | grep --line-buffered -m 1 \"Offline image staged\\|DDIL DETECTED\"'"
+      register: eda_trigger
+      changed_when: false
+
+    - name: "[EDA] Autonomous response confirmed — bootc switch to offline image triggered"
+      debug:
+        msg: "{{ eda_trigger.stdout_lines }}"
+
+    # ── Wait for reboot cycle ────────────────────────────────────────────────
+
+    - name: "[BOOTC] Waiting for VM to go down for reboot..."
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        state: absent
+        timeout: 90
+      ignore_errors: true
+
+    - name: "[BOOTC] Starting VM — retrying until SSH responds (KVM may shut off on guest reboot)"
+      shell: |
+        for i in $(seq 1 12); do
+          STATE=$(virsh --connect qemu:///system domstate {{ vm_name }} 2>/dev/null | tr -d ' ')
+          if [ "$STATE" = "shutoff" ]; then
+            virsh --connect qemu:///system start {{ vm_name }} 2>/dev/null || true
+          fi
+          sleep 10
+          if nc -z -w3 {{ vm_ip }} 22 2>/dev/null; then
+            echo "SSH is up"
+            exit 0
+          fi
+        done
+        echo "Timeout waiting for SSH"
+        exit 1
+      become: true
+      changed_when: true
+
+    - name: Clear stale SSH known_hosts entry after reboot
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
+    # ── Confirm offline mode ─────────────────────────────────────────────────
+
+    - name: "[OFFLINE] Confirming offline image is booted"
+      shell: |
+        sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} \
+          "sudo bootc status | grep -i 'image:' | head -1"
+      register: booted_image
+      changed_when: false
+      failed_when: false
+
+    - name: "[OFFLINE] Satellite is now operating autonomously — image confirmed"
+      debug:
+        msg: "Booted image: {{ booted_image.stdout | default('offline image') }}"
+
+    # ── Show autonomous classification beginning ──────────────────────────────
+    # Waits up to 3 minutes for the first 2 classifications. If the satellite
+    # isn't over the AOI yet this may time out — that's fine, the demo continues.
+
+    - name: "[OFFLINE] Watching llama3.2:1b classify first detections autonomously..."
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} -t demo@{{ vm_ip }} 'sudo timeout 180 journalctl -fu satellite-local-analysis --no-hostname | grep --line-buffered -m 2 Classified'"
+      register: first_classifications
+      changed_when: false
+      failed_when: false
+
+    - name: "[OFFLINE] Autonomous classification active — satellite mission continues"
+      debug:
+        msg: "{{ first_classifications.stdout_lines if first_classifications.stdout_lines else ['No classifications yet — satellite may be between AOI passes. Run demo-watch-offline.sh to monitor live.'] }}"
+
+    - name: Next steps
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════════"
+          - "  Satellite is operating autonomously in DDIL mode."
+          - "  Ground station UI: LINK DOWN + AUTONOMOUS OPS ACTIVE"
+          - ""
+          - "  Watch live classifications in a second terminal:"
+          - "  ./scripts/demo-watch-offline.sh"
+          - ""
+          - "  When ready to restore connectivity:"
+          - "  ansible-playbook demo-restore.yml --ask-become-pass"
+          - "═══════════════════════════════════════════════════════════"

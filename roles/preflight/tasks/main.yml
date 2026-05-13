@@ -40,3 +40,41 @@
   assert:
     that: containerfile_stat.stat.exists
     fail_msg: "Containerfile not found in {{ satellite_demo_src }} — is satellite_demo_src correct?"
+
+# ── Ollama + llama3.2:1b (required for offline satellite image build) ─────────
+# Install Ollama and pull the model if not already present.
+# The image_build role copies these from the host into the build context
+# so no network access is needed inside the container build.
+
+- name: Check if Ollama is installed
+  stat:
+    path: /usr/local/bin/ollama
+  register: ollama_binary
+
+- name: Install Ollama
+  shell: curl -fsSL https://ollama.com/install.sh | sh
+  when: not ollama_binary.stat.exists
+
+- name: Check if {{ ollama_model }} is already pulled
+  stat:
+    path: "{{ ollama_models_dir }}/manifests/registry.ollama.ai/library/{{ ollama_model.split(':')[0] }}/{{ ollama_model.split(':')[1] }}"
+  register: ollama_model_manifest
+  become: true
+
+- name: Start Ollama service temporarily to pull model
+  shell: ollama serve &>/tmp/ollama-preflight.log &
+  when: not ollama_model_manifest.stat.exists
+
+- name: Wait for Ollama to be ready
+  uri:
+    url: http://localhost:11434/api/tags
+    status_code: 200
+  register: ollama_ready
+  until: ollama_ready.status == 200
+  retries: 15
+  delay: 2
+  when: not ollama_model_manifest.stat.exists
+
+- name: Pull {{ ollama_model }} (~900 MB — first run only)
+  command: ollama pull {{ ollama_model }}
+  when: not ollama_model_manifest.stat.exists

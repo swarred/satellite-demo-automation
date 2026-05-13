@@ -1,17 +1,153 @@
 ---
-- name: Build satellite-sim container image
+# ── Local registry ─────────────────────────────────────────────────────────────
+# registry:2 serves both satellite images to the VM over the KVM bridge.
+# The VM uses this registry for bootc switch during DDIL (OCP routes are blocked
+# but the KVM bridge at 192.168.122.1 remains reachable).
+
+- name: Pull registry:2 image for local registry
+  command: podman pull docker.io/library/registry:2
+  changed_when: false
+
+- name: Stop existing local registry (if running)
+  command: podman rm -f {{ local_registry_name }}
+  failed_when: false
+  changed_when: false
+
+- name: Start local image registry on KVM bridge
+  command: >-
+    podman run -d
+    --name {{ local_registry_name }}
+    -p {{ local_registry_port }}:5000
+    --restart always
+    docker.io/library/registry:2
+  changed_when: true
+
+- name: Open local registry port in libvirt firewall zone (permanent + immediate)
+  shell: |
+    firewall-cmd --zone=libvirt --add-port={{ local_registry_port }}/tcp --permanent
+    firewall-cmd --zone=libvirt --add-port={{ local_registry_port }}/tcp
+  become: true
+  changed_when: true
+
+# ── Offline image ──────────────────────────────────────────────────────────────
+# Stage Ollama binary and model files from the build host into the build context
+# so the Containerfile.offline can COPY them in — no network needed during build.
+
+- name: Create build staging directory
+  file:
+    path: "{{ satellite_demo_src }}/build"
+    state: directory
+    mode: '0755'
+
+- name: Stage Ollama binary into build context
+  copy:
+    src: /usr/local/bin/ollama
+    dest: "{{ satellite_demo_src }}/build/ollama"
+    mode: '0755'
+    remote_src: true
+
+- name: Assert {{ ollama_model }} is present on build host before staging
+  stat:
+    path: "{{ ollama_models_dir }}/manifests/registry.ollama.ai/library/{{ ollama_model.split(':')[0] }}/{{ ollama_model.split(':')[1] }}"
+  register: _model_check
+  become: true
+
+- name: Fail if {{ ollama_model }} manifest is missing
+  assert:
+    that: _model_check.stat.exists
+    fail_msg: >
+      Model {{ ollama_model }} not found at {{ ollama_models_dir }}.
+      Run 'ollama pull {{ ollama_model }}' on the build host and re-run site.yml.
+
+- name: Stage {{ ollama_model }} model files into build context
+  synchronize:
+    src: "{{ ollama_models_dir }}/"
+    dest: "{{ satellite_demo_src }}/build/ollama-models/"
+    archive: true
+    delete: true
+  become: true
+
+# ── Generate registry config and bootc switch playbooks from templates ──────────
+# These files contain the local registry address (local_registry_host:port) and
+# must not be committed to git with a hardcoded IP.
+
+- name: Generate local registry config for satellite images
+  template:
+    src: local-registry.conf.j2
+    dest: "{{ satellite_demo_src }}/containers/local-registry.conf"
+    mode: '0644'
+
+- name: Generate bootc-switch-offline playbook
+  template:
+    src: bootc-switch-offline.yml.j2
+    dest: "{{ satellite_demo_src }}/eda/bootc-switch-offline.yml"
+    mode: '0644'
+
+- name: Generate bootc-switch-online playbook
+  template:
+    src: bootc-switch-online.yml.j2
+    dest: "{{ satellite_demo_src }}/eda/bootc-switch-online.yml"
+    mode: '0644'
+
+- name: Build satellite-sim offline image with ground station URL
   command: >-
     podman build
-    -t {{ bootc_image_tag }}
+    -f {{ satellite_demo_src }}/Containerfile.offline
+    -t satellite-sim:offline
+    --build-arg GROUND_STATION_URL=https://{{ route_host.stdout }}
     {{ satellite_demo_src }}
   changed_when: true
+
+- name: Remove build staging directory
+  file:
+    path: "{{ satellite_demo_src }}/build"
+    state: absent
+  become: true
+
+- name: Push offline image to local registry
+  command: >-
+    podman push
+    --tls-verify=false
+    satellite-sim:offline
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:offline
+  changed_when: true
+
+# ── Online image ───────────────────────────────────────────────────────────────
+# Built after ocp_deploy so the ground station route URL is known and can be
+# baked into the EDA rulebook vars at build time.
+
+- name: Build satellite-sim online image with ground station URL
+  command: >-
+    podman build
+    -f {{ satellite_demo_src }}/Containerfile
+    -t {{ bootc_image_tag }}
+    --build-arg GROUND_STATION_URL=https://{{ route_host.stdout }}
+    {{ satellite_demo_src }}
+  changed_when: true
+
+- name: Tag online image for local registry
+  command: >-
+    podman tag
+    {{ bootc_image_tag }}
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:online
+  changed_when: true
+
+- name: Push online image to local registry
+  command: >-
+    podman push
+    --tls-verify=false
+    {{ local_registry_host }}:{{ local_registry_port }}/satellite-sim:online
+  changed_when: true
+
+# ── Archive for bootc-image-builder ───────────────────────────────────────────
+# The online image is converted to qcow2 for the initial VM deploy.
 
 - name: Remove any existing image archive
   file:
     path: /tmp/satellite-sim.tar
     state: absent
 
-- name: Save image to archive for root import
+- name: Save online image to archive for root import
   command: >-
     podman save {{ bootc_image_tag }}
     -o /tmp/satellite-sim.tar

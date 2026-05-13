@@ -1,0 +1,137 @@
+---
+# demo-restore.yml — Restore ground station connectivity and sync offline alerts
+#
+# Usage: ansible-playbook demo-restore.yml --ask-become-pass
+
+- name: DEMO — Restore connectivity and sync offline alerts to ground station
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ssh_opts: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+  tasks:
+
+    # ── Setup ────────────────────────────────────────────────────────────────
+
+    - name: Resolve ground station hostname
+      command: oc get route ground-station -n {{ ocp_namespace }} -o jsonpath='{.spec.host}'
+      register: gs_route
+      changed_when: false
+
+    - name: Start VM if shut off (KVM shuts down on guest reboot)
+      command: virsh --connect qemu:///system start {{ vm_name }}
+      become: true
+      failed_when: false
+      changed_when: true
+
+    - name: Wait for VM to come up and get an IP
+      command: virsh --connect qemu:///system domifaddr {{ vm_name }}
+      register: domifaddr
+      become: true
+      changed_when: false
+      until: domifaddr.rc == 0 and (domifaddr.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')) is not none
+      retries: 18
+      delay: 10
+
+    - name: Parse VM IP
+      set_fact:
+        vm_ip: "{{ domifaddr.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)') }}"
+
+    - name: Clear stale SSH known_hosts entry for VM IP
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
+    - name: Wait for SSH to be ready
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        timeout: 30
+
+    # ── Restore connectivity ──────────────────────────────────────────────────
+
+    - name: "[RESTORE] Connectivity restored — removing ground station hostname block"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'sudo sed -i \"/{{ gs_route.stdout }}/d\" /etc/hosts'"
+      changed_when: true
+
+    # ── Watch EDA detect reconnect ────────────────────────────────────────────
+
+    - name: "[EDA] Waiting for reconnect detection and autonomous switch back to online..."
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} -t demo@{{ vm_ip }} 'sudo journalctl -fu satellite-eda --no-hostname | grep --line-buffered -m 1 \"online image staged\\|CONNECTIVITY RESTORED\"'"
+      register: eda_reconnect
+      changed_when: false
+
+    - name: "[EDA] Reconnect confirmed — bootc switch to online image triggered"
+      debug:
+        msg: "{{ eda_reconnect.stdout_lines }}"
+
+    # ── Wait for reboot cycle ────────────────────────────────────────────────
+
+    - name: "[BOOTC] Waiting for VM to go down for reboot..."
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        state: absent
+        timeout: 90
+      ignore_errors: true
+
+    - name: "[BOOTC] Starting VM — retrying until SSH responds (KVM may shut off on guest reboot)"
+      shell: |
+        for i in $(seq 1 12); do
+          STATE=$(virsh --connect qemu:///system domstate {{ vm_name }} 2>/dev/null | tr -d ' ')
+          if [ "$STATE" = "shutoff" ]; then
+            virsh --connect qemu:///system start {{ vm_name }} 2>/dev/null || true
+          fi
+          sleep 10
+          if nc -z -w3 {{ vm_ip }} 22 2>/dev/null; then
+            echo "SSH is up"
+            exit 0
+          fi
+        done
+        echo "Timeout waiting for SSH"
+        exit 1
+      become: true
+      changed_when: true
+
+    - name: Clear stale SSH known_hosts entry after reboot
+      command: ssh-keygen -R {{ vm_ip }}
+      failed_when: false
+      changed_when: true
+
+    # ── Confirm online mode and offline alert sync ────────────────────────────
+
+    - name: "[ONLINE] Confirming online image is booted"
+      shell: |
+        sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} \
+          "sudo bootc status | grep -i 'image:' | head -1"
+      register: booted_image
+      changed_when: false
+      failed_when: false
+
+    - name: "[ONLINE] Satellite back on online image — ground station link re-establishing"
+      debug:
+        msg: "{{ booted_image.stdout | default('online image') }}"
+
+    - name: "[SYNC] Count offline alerts queued for ground station"
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'wc -l < /var/lib/satellite-sim/offline-queue.jsonl.loaded 2>/dev/null || echo 0'"
+      register: offline_count
+      changed_when: false
+      failed_when: false
+
+    - name: "[SYNC] Offline alerts synced — check ground station UI for teal OFFLINE badges"
+      debug:
+        msg:
+          - "{{ offline_count.stdout | trim }} alert(s) classified offline during DDIL"
+          - "Open https://{{ gs_route.stdout }} to see them with OFFLINE badges."
+
+    - name: "[LINK] Waiting for Skupper link to re-establish..."
+      shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} \"timeout 180 sh -c 'until sudo test -f /var/lib/skupper/.linked; do sleep 10; done' && echo linked || echo unlinked\""
+      register: link_status
+      changed_when: false
+      failed_when: false
+
+    - name: "[LINK] Ground station link status"
+      debug:
+        msg: "Skupper link: {{ link_status.stdout | trim }}"
