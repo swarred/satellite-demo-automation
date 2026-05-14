@@ -1,16 +1,18 @@
 ---
 # ── Worker node ───────────────────────────────────────────────────────────────
-# flightctl needs ~2100m CPU above what a single-node cluster can provide.
-# Pre-req: order the cluster with 1 worker node so this block is skipped.
-# Fallback: if no worker node is Ready, scale the first worker MachineSet to 1.
+# flightctl needs ~2100m CPU above what the default worker pool provides alone.
+# The ideal setup is to order the cluster with at least 2 worker nodes so this
+# block is skipped entirely.  If only 1 worker is found, a second is scaled up
+# automatically via MachineSet.  If 2+ workers are already present, nothing
+# changes.
 
 - name: Count Ready worker nodes
   shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
   register: _worker_ready_count
   changed_when: false
 
-- name: Scale up worker node (only when no worker node is Ready)
-  when: _worker_ready_count.stdout | int < 1
+- name: Scale up a second worker node (only when fewer than 2 workers are Ready)
+  when: _worker_ready_count.stdout | int < 2
   block:
     - name: Find worker MachineSet name
       shell: >-
@@ -23,18 +25,26 @@
       assert:
         that: _worker_ms_name.stdout | trim | length > 0
         fail_msg: >-
-          No Ready worker nodes found and no worker MachineSet detected.
-          Please add a worker node to this cluster before running site.yml.
+          Fewer than 2 Ready worker nodes found and no worker MachineSet detected.
+          Please add a second worker node to this cluster before running site.yml.
 
-    - name: Scale worker MachineSet to 1
+    - name: Get current MachineSet replica count
+      shell: >-
+        oc get machineset {{ _worker_ms_name.stdout | trim }}
+        -n openshift-machine-api -o jsonpath='{.spec.replicas}'
+      register: _worker_ms_replicas
+      changed_when: false
+
+    - name: Scale worker MachineSet to {{ _worker_ready_count.stdout | int + 1 }}
       command: >-
         oc scale machineset {{ _worker_ms_name.stdout | trim }}
-        --replicas=1 -n openshift-machine-api
+        --replicas={{ _worker_ms_replicas.stdout | int + 1 }}
+        -n openshift-machine-api
 
-    - name: Wait for worker node to be Ready (~5 min on AWS)
+    - name: Wait for worker node count to reach 2 (~5 min on AWS)
       shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
       register: _worker_node_ready
-      until: _worker_node_ready.stdout | int >= 1
+      until: _worker_node_ready.stdout | int >= 2
       retries: 40
       delay: 15
       changed_when: false
@@ -187,11 +197,20 @@
   changed_when: false
 
 # ── Organization and RBAC ─────────────────────────────────────────────────────
-# In OpenShift auth mode flightctl maps labeled namespaces to organizations.
-# The label key is io.flightctl/instance=<release-name>.  Without it, every
-# OCP user sees "You do not have access to any organizations."
-# The cluster-admin user must also be explicitly bound to the flightctl-admin
-# ClusterRole; OCP cluster-admin does not imply flightctl admin automatically.
+# 1. Label the namespace so flightctl sees it as an org (projectLabelFilter).
+#    Without this every user gets "You do not have access to any organizations."
+#
+# 2. Create ClusterRole flightctl-org-admin-<namespace> and a namespace-scoped
+#    RoleBinding for the admin user.  Two critical constraints from reading the
+#    flightctl v1.0.2 source (authn/openshift_auth.go, middleware/identity_mapping.go):
+#    a) Only namespace-scoped RoleBindings are found by ListRoleBindingsForUser —
+#       a ClusterRoleBinding is invisible to that query → HTTP 403 on every API call.
+#    b) BuildReportedOrganizations() strips "flightctl-admin" from per-org roles
+#       (it is treated as a global super-admin role, only effective via the
+#       system:cluster-admins OCP group which lab clusters don't assign).
+#       The correct per-org role is "flightctl-org-admin", which is kept and
+#       maps to the internal "org-admin" role, triggering the SSAR check that
+#       the cluster-admin user passes.
 
 - name: Label flightctl namespace as a flightctl organization
   command: >-
@@ -199,18 +218,39 @@
     io.flightctl/instance=flightctl --overwrite
   changed_when: true
 
-- name: Check for existing admin ClusterRoleBinding
-  command: oc get clusterrolebinding flightctl-admin-user-admin
-  register: _crb_check
+- name: Create flightctl-org-admin ClusterRole
+  shell: |
+    oc apply -f - <<'EOF'
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: flightctl-org-admin-{{ flightctl_namespace }}
+      labels:
+        app.kubernetes.io/instance: flightctl
+        app.kubernetes.io/managed-by: Ansible
+        app.kubernetes.io/name: flightctl
+    rules:
+      - verbs: ['*']
+        apiGroups: ['flightctl.io']
+        resources: ['*']
+    EOF
+  changed_when: true
+
+- name: Check for existing org-admin RoleBinding for admin user
+  command: >-
+    oc get rolebinding flightctl-org-admin-user-{{ flightctl_admin_user }}
+    -n {{ flightctl_namespace }}
+  register: _rb_check
   failed_when: false
   changed_when: false
 
-- name: Bind cluster-admin OCP user to flightctl-admin role
+- name: Bind OCP user to flightctl-org-admin role (namespace-scoped RoleBinding)
   command: >-
-    oc create clusterrolebinding flightctl-admin-user-admin
-    --clusterrole=flightctl-admin-{{ flightctl_namespace }}
+    oc create rolebinding flightctl-org-admin-user-{{ flightctl_admin_user }}
+    --clusterrole=flightctl-org-admin-{{ flightctl_namespace }}
     --user={{ flightctl_admin_user }}
-  when: _crb_check.rc != 0
+    -n {{ flightctl_namespace }}
+  when: _rb_check.rc != 0
   changed_when: true
 
 # ── Summary ───────────────────────────────────────────────────────────────────
