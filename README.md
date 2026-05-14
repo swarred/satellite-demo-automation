@@ -39,7 +39,9 @@ Requirements:
 - Cluster-admin credentials (`oc` logged in before running the playbook)
 - Active **Red Hat Edge Manager subscription** (required for the flightctl Helm chart)
 
-> **Worker node:** The catalog item provisions a single control-plane node with workers=0. The `edge_manager` role detects this automatically and scales the worker MachineSet to 1 before installing Edge Manager. No manual intervention needed — allow ~5 minutes for the node to provision on AWS.
+> **Worker node — provision before ordering:** When configuring the cluster order on the catalog form, set the worker node count to **1** (the default is 0). Red Hat Edge Manager requires approximately 2 extra vCPU that a single control-plane-only cluster cannot provide. Adding the worker at order time avoids a ~5-minute wait during `site.yml`.
+>
+> If you already have a cluster with no worker nodes, the `edge_manager` role will detect this and scale the worker MachineSet to 1 automatically before proceeding.
 
 ### Build host
 

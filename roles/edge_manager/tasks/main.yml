@@ -1,37 +1,43 @@
 ---
 # ── Worker node ───────────────────────────────────────────────────────────────
 # flightctl needs ~2100m CPU above what a single-node cluster can provide.
-# The "AWS with OpenShift Open Environment" catalog item ships with workers=0;
-# we scale the first worker MachineSet to 1 if no worker node is Ready yet.
+# Pre-req: order the cluster with 1 worker node so this block is skipped.
+# Fallback: if no worker node is Ready, scale the first worker MachineSet to 1.
 
-- name: Find worker MachineSet name
-  shell: >-
-    oc get machineset -n openshift-machine-api --no-headers -o name
-    | grep worker | head -1 | sed 's|machineset.machine.openshift.io/||'
-  register: _worker_ms_name
-  changed_when: false
-
-- name: Check worker node readiness
+- name: Count Ready worker nodes
   shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
   register: _worker_ready_count
   changed_when: false
 
-- name: Scale worker MachineSet to 1
-  command: >-
-    oc scale machineset {{ _worker_ms_name.stdout | trim }}
-    --replicas=1 -n openshift-machine-api
-  when:
-    - _worker_ms_name.stdout | trim | length > 0
-    - _worker_ready_count.stdout | int < 1
-
-- name: Wait for worker node to be Ready (~5 min on AWS)
-  shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
-  register: _worker_node_ready
-  until: _worker_node_ready.stdout | int >= 1
-  retries: 40
-  delay: 15
-  changed_when: false
+- name: Scale up worker node (only when no worker node is Ready)
   when: _worker_ready_count.stdout | int < 1
+  block:
+    - name: Find worker MachineSet name
+      shell: >-
+        oc get machineset -n openshift-machine-api --no-headers -o name
+        | grep worker | head -1 | sed 's|machineset.machine.openshift.io/||'
+      register: _worker_ms_name
+      changed_when: false
+
+    - name: Assert a worker MachineSet exists to scale
+      assert:
+        that: _worker_ms_name.stdout | trim | length > 0
+        fail_msg: >-
+          No Ready worker nodes found and no worker MachineSet detected.
+          Please add a worker node to this cluster before running site.yml.
+
+    - name: Scale worker MachineSet to 1
+      command: >-
+        oc scale machineset {{ _worker_ms_name.stdout | trim }}
+        --replicas=1 -n openshift-machine-api
+
+    - name: Wait for worker node to be Ready (~5 min on AWS)
+      shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
+      register: _worker_node_ready
+      until: _worker_node_ready.stdout | int >= 1
+      retries: 40
+      delay: 15
+      changed_when: false
 
 # ── Helm repo ─────────────────────────────────────────────────────────────────
 
