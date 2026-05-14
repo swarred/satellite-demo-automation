@@ -32,3 +32,11 @@ ollama_model: "llama3.2:1b"
 # (installed via install.sh), models go to the ollama user's home, not ~/.ollama.
 # Override if your setup differs: -e ollama_models_dir=~/.ollama/models
 ollama_models_dir: "/usr/share/ollama/.ollama/models"
+
+# ----- Edge Manager (flightctl) -----------------------------------------------
+# Red Hat Edge Manager installs on OCP via the openshift-helm-charts Helm repo.
+# Requires an active Red Hat Edge Manager subscription.
+flightctl_namespace: flightctl
+flightctl_chart_version: "1.0.2"
+# OCP user to grant flightctl-admin access (must be a cluster-admin).
+flightctl_admin_user: admin

@@ -1,0 +1,232 @@
+---
+# ── Worker node ───────────────────────────────────────────────────────────────
+# flightctl needs ~2100m CPU above what a single-node cluster can provide.
+# The "AWS with OpenShift Open Environment" catalog item ships with workers=0;
+# we scale the first worker MachineSet to 1 if no worker node is Ready yet.
+
+- name: Find worker MachineSet name
+  shell: >-
+    oc get machineset -n openshift-machine-api --no-headers -o name
+    | grep worker | head -1 | sed 's|machineset.machine.openshift.io/||'
+  register: _worker_ms_name
+  changed_when: false
+
+- name: Check worker node readiness
+  shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
+  register: _worker_ready_count
+  changed_when: false
+
+- name: Scale worker MachineSet to 1
+  command: >-
+    oc scale machineset {{ _worker_ms_name.stdout | trim }}
+    --replicas=1 -n openshift-machine-api
+  when:
+    - _worker_ms_name.stdout | trim | length > 0
+    - _worker_ready_count.stdout | int < 1
+
+- name: Wait for worker node to be Ready (~5 min on AWS)
+  shell: oc get nodes --no-headers | grep -v master | grep -c "Ready" || true
+  register: _worker_node_ready
+  until: _worker_node_ready.stdout | int >= 1
+  retries: 40
+  delay: 15
+  changed_when: false
+  when: _worker_ready_count.stdout | int < 1
+
+# ── Helm repo ─────────────────────────────────────────────────────────────────
+
+- name: Add openshift-helm-charts repo
+  command: helm repo add openshift-helm-charts https://charts.openshift.io
+  register: _helm_repo_add
+  changed_when: "'already exists' not in _helm_repo_add.stderr"
+  failed_when: _helm_repo_add.rc != 0 and 'already exists' not in _helm_repo_add.stderr
+
+- name: Update openshift-helm-charts repo
+  command: helm repo update openshift-helm-charts
+  changed_when: false
+
+# ── Cluster info ──────────────────────────────────────────────────────────────
+
+- name: Get ingress base domain
+  command: >-
+    oc get ingresses.config.openshift.io cluster
+    -o jsonpath='{.spec.domain}'
+  register: _ingress_domain
+  changed_when: false
+
+- name: Get kube API CA cert
+  command: >-
+    oc get configmap kube-root-ca.crt -n openshift-config
+    -o jsonpath='{.data.ca\.crt}'
+  register: _kube_ca
+  changed_when: false
+
+- name: Get ingress router CA cert
+  shell: >-
+    oc get secret router-ca -n openshift-ingress-operator
+    -o jsonpath='{.data.tls\.crt}' | base64 -d
+  register: _ingress_ca
+  changed_when: false
+
+- name: Assemble CA bundle and base domain facts
+  set_fact:
+    _flightctl_base_domain: "{{ _ingress_domain.stdout | trim }}"
+    _flightctl_ca_bundle: "{{ _kube_ca.stdout | trim }}\n{{ _ingress_ca.stdout | trim }}"
+
+# ── Helm install ──────────────────────────────────────────────────────────────
+
+- name: Check current flightctl Helm release status
+  shell: >-
+    helm list -n {{ flightctl_namespace }} -o json 2>/dev/null
+    | python3 -c "
+    import sys, json
+    releases = [r for r in json.load(sys.stdin) if r['name'] == 'flightctl']
+    print(releases[0]['status'] if releases else 'absent')
+    "
+  register: _helm_status
+  changed_when: false
+  failed_when: false
+
+- name: Clean up stuck Helm release
+  when: _helm_status.stdout in ['pending-install', 'pending-upgrade', 'failed']
+  block:
+    - name: Uninstall stuck release
+      command: helm uninstall flightctl -n {{ flightctl_namespace }}
+      failed_when: false
+
+    - name: Remove orphaned PVCs from stuck install
+      command: oc delete pvc --all -n {{ flightctl_namespace }}
+      failed_when: false
+
+    - name: Reset helm status to absent
+      set_fact:
+        _helm_status: "{{ _helm_status | combine({'stdout': 'absent'}) }}"
+
+- name: Create flightctl namespace
+  shell: >-
+    oc get namespace {{ flightctl_namespace }} 2>/dev/null
+    || oc new-project {{ flightctl_namespace }}
+  register: _ns_result
+  changed_when: "'Already on project' not in _ns_result.stdout and 'already exists' not in _ns_result.stderr"
+
+- name: Write flightctl Helm values file
+  template:
+    src: flightctl-values.yaml.j2
+    dest: /tmp/flightctl-values.yaml
+  when: _helm_status.stdout == 'absent'
+
+- name: Install flightctl via Helm (non-blocking — pods waited on separately)
+  command: >-
+    helm install flightctl openshift-helm-charts/flightctl
+    --namespace {{ flightctl_namespace }}
+    --version {{ flightctl_chart_version }}
+    -f /tmp/flightctl-values.yaml
+  when: _helm_status.stdout == 'absent'
+  changed_when: true
+
+# ── CA bundle secret ──────────────────────────────────────────────────────────
+# The Helm post-install hook creates this secret, but can silently fail to run
+# if the helm install command is interrupted.  We create it directly once the
+# cert-manager-issued (or builtin) CA secrets are ready, making the role
+# idempotent and resilient to hook timing issues.
+
+- name: Wait for flightctl CA secrets to be issued
+  shell: >-
+    oc get secret {{ item }} -n {{ flightctl_namespace }}
+    -o jsonpath='{.data.tls\.crt}' 2>/dev/null | wc -c
+  register: _ca_secret_size
+  until: _ca_secret_size.stdout | int > 10
+  retries: 40
+  delay: 10
+  changed_when: false
+  loop:
+    - flightctl-ca
+    - flightctl-client-signer-ca
+
+- name: Read flightctl CA cert
+  shell: >-
+    oc get secret flightctl-ca -n {{ flightctl_namespace }}
+    -o jsonpath='{.data.tls\.crt}' | base64 -d
+  register: _fc_ca
+  changed_when: false
+
+- name: Read flightctl client-signer CA cert
+  shell: >-
+    oc get secret flightctl-client-signer-ca -n {{ flightctl_namespace }}
+    -o jsonpath='{.data.tls\.crt}' | base64 -d
+  register: _fc_client_ca
+  changed_when: false
+
+- name: Create flightctl-ca-bundle secret
+  shell: |
+    oc create secret generic flightctl-ca-bundle \
+      -n {{ flightctl_namespace }} \
+      --from-literal="ca-bundle.crt={{ _fc_ca.stdout | trim }}
+    {{ _fc_client_ca.stdout | trim }}" \
+      --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
+# ── Wait for pods ─────────────────────────────────────────────────────────────
+
+- name: Wait for all flightctl pods to be Running
+  shell: >-
+    oc get pods -n {{ flightctl_namespace }} --no-headers
+    | grep -v -E "Completed|Terminating"
+    | grep -v "1/1.*Running"
+    | wc -l
+  register: _pods_not_ready
+  until: _pods_not_ready.stdout | int == 0
+  retries: 40
+  delay: 15
+  changed_when: false
+
+# ── Organization and RBAC ─────────────────────────────────────────────────────
+# In OpenShift auth mode flightctl maps labeled namespaces to organizations.
+# The label key is io.flightctl/instance=<release-name>.  Without it, every
+# OCP user sees "You do not have access to any organizations."
+# The cluster-admin user must also be explicitly bound to the flightctl-admin
+# ClusterRole; OCP cluster-admin does not imply flightctl admin automatically.
+
+- name: Label flightctl namespace as a flightctl organization
+  command: >-
+    oc label namespace {{ flightctl_namespace }}
+    io.flightctl/instance=flightctl --overwrite
+  changed_when: true
+
+- name: Check for existing admin ClusterRoleBinding
+  command: oc get clusterrolebinding flightctl-admin-user-admin
+  register: _crb_check
+  failed_when: false
+  changed_when: false
+
+- name: Bind cluster-admin OCP user to flightctl-admin role
+  command: >-
+    oc create clusterrolebinding flightctl-admin-user-admin
+    --clusterrole=flightctl-admin-{{ flightctl_namespace }}
+    --user={{ flightctl_admin_user }}
+  when: _crb_check.rc != 0
+  changed_when: true
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+- name: Get flightctl UI route
+  command: >-
+    oc get route flightctl-ui -n {{ flightctl_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _ui_route
+  changed_when: false
+
+- name: Get flightctl agent enrollment route
+  command: >-
+    oc get route flightctl-api-route-agent -n {{ flightctl_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _agent_route
+  changed_when: false
+
+- name: Edge Manager ready
+  debug:
+    msg:
+      - "Red Hat Edge Manager (flightctl) is installed and ready"
+      - "UI:           https://{{ _ui_route.stdout }}"
+      - "Agent API:    https://{{ _agent_route.stdout }}"
+      - "Login:        {{ flightctl_admin_user }} (OCP cluster-admin)"

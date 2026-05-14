@@ -30,12 +30,24 @@ Deletes the OCP namespace, removes the RHSI Subscription and CSV, deletes the `s
 
 ## Prerequisites
 
+### OpenShift cluster
+
+Provision an **"AWS with OpenShift Open Environment"** cluster from the [Red Hat Demo Platform catalog](https://catalog.demo.redhat.com/catalog/babylon-catalog-prod?item=babylon-catalog-prod/sandboxes-gpte.sandbox-ocp.prod&utm_source=webapp&utm_medium=share-link).
+
+Requirements:
+- OpenShift **4.19 or later** (required for Red Hat Edge Manager)
+- Cluster-admin credentials (`oc` logged in before running the playbook)
+- Active **Red Hat Edge Manager subscription** (required for the flightctl Helm chart)
+
+> **Worker node:** The catalog item provisions a single control-plane node with workers=0. The `edge_manager` role detects this automatically and scales the worker MachineSet to 1 before installing Edge Manager. No manual intervention needed — allow ~5 minutes for the node to provision on AWS.
+
+### Build host
+
 - Fedora/RHEL host with:
   - KVM/libvirt (`virsh`, `virt-install`)
   - `podman`
   - `sshpass`
   - `bootc-image-builder` (`ghcr.io/osbuild/bootc-image-builder` — pulled automatically)
-- `oc` CLI logged in to an OpenShift 4.14+ cluster with cluster-admin rights (required to install the RHSI operator)
 - Active Red Hat subscription on the build host (for `registry.redhat.io` base images)
 - Ansible 2.14+
 
@@ -133,6 +145,9 @@ All defaults are in `group_vars/all.yml`. Key variables:
 | `ollama_models_dir` | `/usr/share/ollama/.ollama/models` | Ollama model storage on the build host |
 | `skupper_grant_redemptions` | `5` | AccessGrant redemptions per deploy |
 | `skupper_grant_expiration` | `168h` | AccessGrant TTL |
+| `flightctl_namespace` | `flightctl` | OCP namespace for the Edge Manager install |
+| `flightctl_chart_version` | `1.0.2` | flightctl Helm chart version |
+| `flightctl_admin_user` | `admin` | OCP username granted flightctl admin access |
 
 Override any variable on the command line:
 
@@ -148,6 +163,7 @@ ansible-playbook site.yml -e ocp_namespace=my-namespace --ask-become-pass
 |------|---------|
 | `preflight` | Host dependency check; installs Ollama and pulls llama3.2:1b if needed |
 | `rhsi_operator` | Installs RHSI operator cluster-wide; idempotent (skips if already present) |
+| `edge_manager` | Installs Red Hat Edge Manager (flightctl 1.0.2) on OCP; scales worker MachineSet if needed; creates org label and admin RBAC binding |
 | `skupper_grant` | Creates OCP namespace, Skupper site/listener/AccessGrant, extracts token |
 | `ocp_deploy` | In-cluster binary build of ground station; captures route URL |
 | `image_build` | Builds offline then online bootc images; starts local registry |
