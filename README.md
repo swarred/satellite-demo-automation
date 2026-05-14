@@ -45,20 +45,55 @@ Requirements:
 
 ### Build host
 
-- Fedora/RHEL host with:
-  - KVM/libvirt (`virsh`, `virt-install`)
-  - `podman`
-  - `sshpass`
-  - `bootc-image-builder` (`ghcr.io/osbuild/bootc-image-builder` — pulled automatically)
-- Active Red Hat subscription on the build host (for `registry.redhat.io` base images)
-- Ansible 2.14+
+Fedora or RHEL host with an active Red Hat subscription (needed for `registry.redhat.io` base images during the satellite image build).
+
+#### Install host dependencies
+
+Run this before your first `site.yml` execution. The preflight role will catch anything missing, but installing ahead of time avoids a mid-run failure.
+
+```bash
+# Core packages — KVM, podman, sshpass, firewalld
+sudo dnf install -y \
+  qemu-kvm libvirt virt-install \
+  podman \
+  sshpass \
+  firewalld
+
+# Helm (required for Edge Manager install)
+# https://helm.sh/docs/intro/install/
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# OpenShift CLI (oc) — download from your cluster's console or:
+# https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
+```
+
+#### Enable required services
+
+```bash
+sudo systemctl enable --now libvirtd firewalld
+```
+
+#### Verify everything is in place
+
+```bash
+for bin in podman oc virsh virt-install sshpass helm; do
+  command -v $bin &>/dev/null && echo "OK  $bin" || echo "MISSING  $bin"
+done
+systemctl is-active libvirtd firewalld
+df -h /var/lib/libvirt/images /var/lib/containers   # need 20 GB free each
+```
+
+#### Ansible
 
 ```bash
 pip install ansible
-ansible-galaxy collection install kubernetes.core ansible.posix containers.podman
 ```
 
-- The [satellite-demo](https://github.com/swarred/satellite-demo) repo cloned as a sibling directory:
+> `bootc-image-builder` is not a host binary — it runs as a container pulled automatically during the `bootc_convert` step. No manual install needed.
+
+#### Source repos
+
+Clone both repos as siblings:
 
 ```
 ~/satellite-demo/            ← source repo
