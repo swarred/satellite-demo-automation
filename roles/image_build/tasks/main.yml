@@ -29,6 +29,55 @@
   become: true
   changed_when: true
 
+# ── flightctl enrollment config ────────────────────────────────────────────────
+# Generate a fresh enrollment config (cert + key + CA bundle + agent API URL)
+# and write it into the build context so both Containerfiles can COPY it in.
+# The config is cluster-specific and gitignored — regenerated on every site.yml run.
+
+- name: Create flightctl config directory in build context
+  file:
+    path: "{{ satellite_demo_src }}/flightctl"
+    state: directory
+    mode: '0755'
+
+- name: Get flightctl API route
+  command: >-
+    oc get route flightctl-api-route -n {{ flightctl_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _fc_api_host
+  changed_when: false
+
+- name: Log in to flightctl with OCP token
+  command: flightctl login https://{{ _fc_api_host.stdout | trim }} --token={{ ocp_token }} --insecure-skip-tls-verify
+  no_log: true
+  changed_when: true
+
+- name: Generate enrollment certificate and config
+  shell: >-
+    flightctl certificate request
+    --signer=enrollment
+    --expiration=365d
+    --output=embedded
+    > {{ satellite_demo_src }}/flightctl/config.yaml
+  args:
+    chdir: "{{ satellite_demo_src }}/flightctl"
+  changed_when: true
+
+- name: Append default labels to enrollment config
+  blockinfile:
+    path: "{{ satellite_demo_src }}/flightctl/config.yaml"
+    block: |
+      default-labels:
+        role: satellite-sim
+        demo: ussf-ddil
+    marker: ""
+  changed_when: true
+
+- name: Remove leftover enrollment key file
+  file:
+    path: "{{ satellite_demo_src }}/flightctl/client-enrollment.key"
+    state: absent
+
 # ── Offline image ──────────────────────────────────────────────────────────────
 # Stage Ollama binary and model files from the build host into the build context
 # so the Containerfile.offline can COPY them in — no network needed during build.

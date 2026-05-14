@@ -114,9 +114,35 @@
     ENDSSH
   when: link_status.stdout == 'unlinked'
 
+# ── Edge Manager enrollment ────────────────────────────────────────────────────
+# Wait for the flightctl-agent on the VM to submit its enrollment request,
+# then auto-approve it with demo labels so the device appears in the UI.
+
+- name: Wait for satellite-sim enrollment request to appear
+  shell: >-
+    flightctl get enrollmentrequests -o json 2>/dev/null |
+    python3 -c "
+    import sys, json
+    items = json.load(sys.stdin).get('items', [])
+    print(items[0]['metadata']['name'] if items else '')
+    "
+  register: _er_name
+  until: _er_name.stdout | trim | length > 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Approve enrollment request with demo labels
+  command: >-
+    flightctl approve enrollmentrequest/{{ _er_name.stdout | trim }}
+    -l role=satellite-sim
+    -l demo=ussf-ddil
+  changed_when: true
+
 - name: Display VM connection info
   debug:
     msg:
       - "VM is up at {{ vm_ip }}"
       - "SSH: ssh demo@{{ vm_ip }}  (password: satellite)"
       - "skupper-init.service will link to OCP in the background — allow ~30 seconds"
+      - "Satellite registered in Edge Manager as: {{ _er_name.stdout | trim }}"
