@@ -18,6 +18,11 @@
       register: _oc_token
       changed_when: false
 
+    - name: Fetch current OCP username
+      command: oc whoami
+      register: _oc_whoami
+      changed_when: false
+
     - name: Set OCP connection facts
       set_fact:
         ocp_api_url: "{{ _oc_server.stdout | trim }}"

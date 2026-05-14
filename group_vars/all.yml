@@ -38,5 +38,7 @@ ollama_models_dir: "/usr/share/ollama/.ollama/models"
 # Requires an active Red Hat Edge Manager subscription.
 flightctl_namespace: flightctl
 flightctl_chart_version: "1.0.2"
-# OCP user to grant flightctl-admin access (must be a cluster-admin).
-flightctl_admin_user: admin
+# OCP user granted flightctl org-admin access.
+# Defaults to whoever is logged in when the playbook runs (oc whoami).
+# Override only if you need a different user: -e flightctl_admin_user=someuser
+flightctl_admin_user: "{{ _oc_whoami.stdout | trim }}"

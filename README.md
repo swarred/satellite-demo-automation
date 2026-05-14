@@ -149,7 +149,7 @@ All defaults are in `group_vars/all.yml`. Key variables:
 | `skupper_grant_expiration` | `168h` | AccessGrant TTL |
 | `flightctl_namespace` | `flightctl` | OCP namespace for the Edge Manager install |
 | `flightctl_chart_version` | `1.0.2` | flightctl Helm chart version |
-| `flightctl_admin_user` | `admin` | OCP username granted flightctl admin access |
+| `flightctl_admin_user` | `oc whoami` (auto-detected) | OCP username granted flightctl org-admin access; defaults to whoever is logged in |
 
 Override any variable on the command line:
 
