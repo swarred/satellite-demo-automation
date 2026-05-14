@@ -18,6 +18,11 @@
       register: _oc_token
       changed_when: false
 
+    - name: Fetch current OCP username
+      command: oc whoami
+      register: _oc_whoami
+      changed_when: false
+
     - name: Set OCP connection facts
       set_fact:
         ocp_api_url: "{{ _oc_server.stdout | trim }}"
@@ -26,8 +31,66 @@
   roles:
     - preflight
     - rhsi_operator   # install RHSI operator cluster-wide if not already present
+    - edge_manager    # install Red Hat Edge Manager (flightctl) on OCP; scales worker node if needed
     - skupper_grant   # OCP login, namespace, skupper site+listener, AccessGrant, extract token
     - ocp_deploy      # in-cluster build + deploy ground station + MaaS secret; captures route URL
     - image_build     # podman build both satellite images (offline first, then online with route URL)
     - bootc_convert   # become: root — convert online image to qcow2 via bootc-image-builder
     - vm_deploy       # become: root — virt-install + wait for SSH
+
+  post_tasks:
+    - name: Get OCP console route
+      command: oc get route console -n openshift-console -o jsonpath='{.spec.host}'
+      register: _console_route
+      changed_when: false
+      failed_when: false
+
+    - name: Get ground station route
+      command: oc get route ground-station -n {{ ocp_namespace }} -o jsonpath='{.spec.host}'
+      register: _gs_route
+      changed_when: false
+      failed_when: false
+
+    - name: Get flightctl UI route
+      command: oc get route flightctl-ui -n {{ flightctl_namespace }} -o jsonpath='{.spec.host}'
+      register: _fc_ui_route
+      changed_when: false
+      failed_when: false
+
+    - name: Get flightctl agent enrollment route
+      command: >-
+        oc get route flightctl-api-route-agent -n {{ flightctl_namespace }}
+        -o jsonpath='{.spec.host}'
+      register: _fc_agent_route
+      changed_when: false
+      failed_when: false
+
+    - name: Demo environment ready
+      debug:
+        msg:
+          - "========================================================"
+          - "  SATELLITE DEMO — READY"
+          - "========================================================"
+          - ""
+          - "── OCP LOGIN ───────────────────────────────────────────"
+          - "  API:      {{ ocp_api_url }}"
+          - "  User:     {{ _oc_whoami.stdout | trim }}"
+          - "  Token:    {{ ocp_token }}"
+          - "  CLI:      oc login {{ ocp_api_url }} \\"
+          - "              --token={{ ocp_token }} \\"
+          - "              --insecure-skip-tls-verify=true"
+          - ""
+          - "── WEB CONSOLES ────────────────────────────────────────"
+          - "  OCP Console:    https://{{ _console_route.stdout }}"
+          - "  Ground Station: https://{{ _gs_route.stdout }}"
+          - "  Edge Manager:   https://{{ _fc_ui_route.stdout }}"
+          - ""
+          - "── SATELLITE VM ────────────────────────────────────────"
+          - "  IP:   {{ vm_ip }}"
+          - "  SSH:  ssh demo@{{ vm_ip }}  (password: satellite)"
+          - ""
+          - "── EDGE MANAGER ────────────────────────────────────────"
+          - "  Agent API: https://{{ _fc_agent_route.stdout }}"
+          - "  Login:     {{ _oc_whoami.stdout | trim }} (OCP credentials)"
+          - ""
+          - "========================================================"

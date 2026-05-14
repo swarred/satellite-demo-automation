@@ -1,4 +1,16 @@
 ---
+# ── Cluster provisioning advisory ─────────────────────────────────────────────
+# Printed before any checks so the user sees it even on a clean run.
+- name: Edge Manager worker node advisory
+  debug:
+    msg:
+      - "ADVISORY: Red Hat Edge Manager (flightctl) requires extra CPU resources."
+      - "When provisioning the OCP cluster used for this demo, order it with"
+      - "at least 2 worker nodes (not the default 1).  The edge_manager role"
+      - "will scale up a second worker automatically if only 1 is present, but"
+      - "this adds ~5 minutes to the run.  Pre-provisioning avoids the wait."
+
+# ── Required binaries ─────────────────────────────────────────────────────────
 - name: Check required binaries
   command: which {{ item }}
   changed_when: false
@@ -8,7 +20,9 @@
     - podman
     - oc
     - virsh
+    - virt-install
     - sshpass
+    - helm
 
 - name: Assert all required binaries are present
   assert:
@@ -17,6 +31,42 @@
       Required binary '{{ item.item }}' not found.
       Please install it and re-run.
   loop: "{{ which_results.results }}"
+
+# ── System services ────────────────────────────────────────────────────────────
+
+- name: Ensure libvirtd is running (required for VM deploy)
+  systemd:
+    name: libvirtd
+    state: started
+    enabled: true
+  become: true
+
+- name: Ensure firewalld is running (required for local registry port)
+  systemd:
+    name: firewalld
+    state: started
+    enabled: true
+  become: true
+
+# ── Disk space ─────────────────────────────────────────────────────────────────
+# bootc-image-builder produces a qcow2 at vm_image_dest; podman build caches
+# also accumulate under /var/lib/containers.  Fail early if space is tight.
+
+- name: Check free disk space for VM image and container storage
+  shell: df --output=avail -BG {{ item }} | tail -1 | tr -d 'G '
+  register: _disk_check
+  changed_when: false
+  loop:
+    - /var/lib/libvirt/images
+    - /var/lib/containers
+
+- name: Assert sufficient free disk space (20 GB minimum per path)
+  assert:
+    that: item.stdout | int >= 20
+    fail_msg: >
+      Insufficient disk space on {{ item.item }} — {{ item.stdout }}GB free,
+      20GB required. Free space before running site.yml.
+  loop: "{{ _disk_check.results }}"
 
 - name: Verify satellite-demo source directory exists
   stat:

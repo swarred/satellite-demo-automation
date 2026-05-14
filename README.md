@@ -30,21 +30,70 @@ Deletes the OCP namespace, removes the RHSI Subscription and CSV, deletes the `s
 
 ## Prerequisites
 
-- Fedora/RHEL host with:
-  - KVM/libvirt (`virsh`, `virt-install`)
-  - `podman`
-  - `sshpass`
-  - `bootc-image-builder` (`ghcr.io/osbuild/bootc-image-builder` — pulled automatically)
-- `oc` CLI logged in to an OpenShift 4.14+ cluster with cluster-admin rights (required to install the RHSI operator)
-- Active Red Hat subscription on the build host (for `registry.redhat.io` base images)
-- Ansible 2.14+
+### OpenShift cluster
+
+Provision an **"AWS with OpenShift Open Environment"** cluster from the [Red Hat Demo Platform catalog](https://catalog.demo.redhat.com/catalog/babylon-catalog-prod?item=babylon-catalog-prod/sandboxes-gpte.sandbox-ocp.prod&utm_source=webapp&utm_medium=share-link).
+
+Requirements:
+- OpenShift **4.19 or later** (required for Red Hat Edge Manager)
+- Cluster-admin credentials (`oc` logged in before running the playbook)
+- Active **Red Hat Edge Manager subscription** (required for the flightctl Helm chart)
+
+> **Worker nodes — provision before ordering:** When configuring the cluster order on the catalog form, set the worker node count to **2** (the default is 0). Red Hat Edge Manager requires approximately 2 extra vCPU that a single control-plane-only cluster cannot provide, and having 2 workers ensures capacity for both Edge Manager and the ground station workloads. Adding workers at order time avoids a ~5-minute wait during `site.yml`.
+>
+> If you already have a cluster with fewer than 2 worker nodes, the `edge_manager` role will detect this and scale the worker MachineSet up automatically before proceeding.
+
+### Build host
+
+Fedora or RHEL host with an active Red Hat subscription (needed for `registry.redhat.io` base images during the satellite image build).
+
+#### Install host dependencies
+
+Run this before your first `site.yml` execution. The preflight role will catch anything missing, but installing ahead of time avoids a mid-run failure.
+
+```bash
+# Core packages — KVM, podman, sshpass, firewalld
+sudo dnf install -y \
+  qemu-kvm libvirt virt-install \
+  podman \
+  sshpass \
+  firewalld
+
+# Helm (required for Edge Manager install)
+# https://helm.sh/docs/intro/install/
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# OpenShift CLI (oc) — download from your cluster's console or:
+# https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
+```
+
+#### Enable required services
+
+```bash
+sudo systemctl enable --now libvirtd firewalld
+```
+
+#### Verify everything is in place
+
+```bash
+for bin in podman oc virsh virt-install sshpass helm; do
+  command -v $bin &>/dev/null && echo "OK  $bin" || echo "MISSING  $bin"
+done
+systemctl is-active libvirtd firewalld
+df -h /var/lib/libvirt/images /var/lib/containers   # need 20 GB free each
+```
+
+#### Ansible
 
 ```bash
 pip install ansible
-ansible-galaxy collection install kubernetes.core ansible.posix containers.podman
 ```
 
-- The [satellite-demo](https://github.com/swarred/satellite-demo) repo cloned as a sibling directory:
+> `bootc-image-builder` is not a host binary — it runs as a container pulled automatically during the `bootc_convert` step. No manual install needed.
+
+#### Source repos
+
+Clone both repos as siblings:
 
 ```
 ~/satellite-demo/            ← source repo
@@ -133,6 +182,9 @@ All defaults are in `group_vars/all.yml`. Key variables:
 | `ollama_models_dir` | `/usr/share/ollama/.ollama/models` | Ollama model storage on the build host |
 | `skupper_grant_redemptions` | `5` | AccessGrant redemptions per deploy |
 | `skupper_grant_expiration` | `168h` | AccessGrant TTL |
+| `flightctl_namespace` | `flightctl` | OCP namespace for the Edge Manager install |
+| `flightctl_chart_version` | `1.0.2` | flightctl Helm chart version |
+| `flightctl_admin_user` | `oc whoami` (auto-detected) | OCP username granted flightctl org-admin access; defaults to whoever is logged in |
 
 Override any variable on the command line:
 
@@ -148,6 +200,7 @@ ansible-playbook site.yml -e ocp_namespace=my-namespace --ask-become-pass
 |------|---------|
 | `preflight` | Host dependency check; installs Ollama and pulls llama3.2:1b if needed |
 | `rhsi_operator` | Installs RHSI operator cluster-wide; idempotent (skips if already present) |
+| `edge_manager` | Installs Red Hat Edge Manager (flightctl 1.0.2) on OCP; scales worker MachineSet if needed; creates org label and admin RBAC binding |
 | `skupper_grant` | Creates OCP namespace, Skupper site/listener/AccessGrant, extracts token |
 | `ocp_deploy` | In-cluster binary build of ground station; captures route URL |
 | `image_build` | Builds offline then online bootc images; starts local registry |
