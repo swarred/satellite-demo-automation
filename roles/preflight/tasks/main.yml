@@ -1,4 +1,16 @@
 ---
+# ── Cluster provisioning advisory ─────────────────────────────────────────────
+# Printed before any checks so the user sees it even on a clean run.
+- name: Edge Manager worker node advisory
+  debug:
+    msg:
+      - "ADVISORY: Red Hat Edge Manager (flightctl) requires extra CPU resources."
+      - "When provisioning the OCP cluster used for this demo, order it with"
+      - "at least 2 worker nodes (not the default 1).  The edge_manager role"
+      - "will scale up a second worker automatically if only 1 is present, but"
+      - "this adds ~5 minutes to the run.  Pre-provisioning avoids the wait."
+
+# ── Required binaries ─────────────────────────────────────────────────────────
 - name: Check required binaries
   command: which {{ item }}
   changed_when: false

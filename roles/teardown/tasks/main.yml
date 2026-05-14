@@ -81,10 +81,28 @@
   failed_when: false
   changed_when: true
 
+- name: Uninstall flightctl Helm release (runs post-delete cleanup hooks)
+  command: helm uninstall flightctl -n {{ flightctl_namespace }}
+  failed_when: false
+  changed_when: true
+
+- name: Delete flightctl namespace
+  command: >-
+    oc delete namespace {{ flightctl_namespace }}
+    --ignore-not-found=true
+  changed_when: true
+
+- name: Delete flightctl-org-admin ClusterRole (created by playbook, not Helm)
+  command: >-
+    oc delete clusterrole flightctl-org-admin-{{ flightctl_namespace }}
+    --ignore-not-found=true
+  changed_when: true
+
 - name: Teardown complete
   debug:
     msg:
       - "OCP namespace '{{ ocp_namespace }}' deleted"
       - "VM '{{ vm_name }}' destroyed and undefined"
       - "Local registry stopped, firewall port {{ local_registry_port }} closed"
+      - "flightctl namespace and ClusterRole removed"
       - "Ready to re-run: ansible-playbook site.yml"

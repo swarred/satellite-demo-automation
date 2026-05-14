@@ -96,8 +96,11 @@
     helm list -n {{ flightctl_namespace }} -o json 2>/dev/null
     | python3 -c "
     import sys, json
-    releases = [r for r in json.load(sys.stdin) if r['name'] == 'flightctl']
-    print(releases[0]['status'] if releases else 'absent')
+    try:
+      releases = [r for r in json.load(sys.stdin) if r['name'] == 'flightctl']
+      print(releases[0]['status'] if releases else 'absent')
+    except Exception:
+      print('absent')
     "
   register: _helm_status
   changed_when: false
@@ -114,10 +117,6 @@
       command: oc delete pvc --all -n {{ flightctl_namespace }}
       failed_when: false
 
-    - name: Reset helm status to absent
-      set_fact:
-        _helm_status: "{{ _helm_status | combine({'stdout': 'absent'}) }}"
-
 - name: Create flightctl namespace
   shell: >-
     oc get namespace {{ flightctl_namespace }} 2>/dev/null
@@ -125,20 +124,18 @@
   register: _ns_result
   changed_when: "'Already on project' not in _ns_result.stdout and 'already exists' not in _ns_result.stderr"
 
-- name: Write flightctl Helm values file
-  template:
-    src: flightctl-values.yaml.j2
-    dest: /tmp/flightctl-values.yaml
-  when: _helm_status.stdout == 'absent'
-
-- name: Install flightctl via Helm (non-blocking — pods waited on separately)
-  command: >-
-    helm install flightctl openshift-helm-charts/flightctl
+# helm upgrade --install is idempotent and re-runs the pre-upgrade cert-generator
+# hook on every run, ensuring CA secrets exist even if a previous install was
+# interrupted before the hook Job could complete.
+- name: Install or upgrade flightctl via Helm
+  shell: >-
+    helm upgrade --install flightctl openshift-helm-charts/flightctl
     --namespace {{ flightctl_namespace }}
     --version {{ flightctl_chart_version }}
-    -f /tmp/flightctl-values.yaml
-  when: _helm_status.stdout == 'absent'
-  changed_when: true
+    --set global.baseDomain="{{ _flightctl_base_domain }}"
+    --set-literal global.auth.caCert="{{ _flightctl_ca_bundle }}"
+  register: _helm_upgrade
+  changed_when: "'has been upgraded' in _helm_upgrade.stdout or 'has been deployed' in _helm_upgrade.stdout"
 
 # ── CA bundle secret ──────────────────────────────────────────────────────────
 # The Helm post-install hook creates this secret, but can silently fail to run
@@ -185,13 +182,17 @@
 # ── Wait for pods ─────────────────────────────────────────────────────────────
 
 - name: Wait for all flightctl pods to be Running
-  shell: >-
-    oc get pods -n {{ flightctl_namespace }} --no-headers
-    | grep -v -E "Completed|Terminating"
-    | grep -v "1/1.*Running"
-    | wc -l
-  register: _pods_not_ready
-  until: _pods_not_ready.stdout | int == 0
+  shell: |
+    NOT_READY=$(oc get pods -n {{ flightctl_namespace }} --no-headers 2>/dev/null \
+      | grep -v -E "Completed|Terminating" \
+      | grep -v "1/1.*Running" \
+      | wc -l)
+    TOTAL=$(oc get pods -n {{ flightctl_namespace }} --no-headers 2>/dev/null | wc -l)
+    echo "${NOT_READY} ${TOTAL}"
+  register: _pod_status
+  until: >-
+    _pod_status.stdout.split()[0] | int == 0 and
+    _pod_status.stdout.split()[1] | int >= 8
   retries: 40
   delay: 15
   changed_when: false
@@ -261,6 +262,7 @@
     -o jsonpath='{.spec.host}'
   register: _ui_route
   changed_when: false
+  failed_when: false
 
 - name: Get flightctl agent enrollment route
   command: >-
@@ -268,6 +270,7 @@
     -o jsonpath='{.spec.host}'
   register: _agent_route
   changed_when: false
+  failed_when: false
 
 - name: Edge Manager ready
   debug:

@@ -1,6 +1,0 @@
-global:
-  baseDomain: "{{ _flightctl_base_domain }}"
-  auth:
-    insecureSkipTlsVerify: false
-    caCert: |
-{{ _flightctl_ca_bundle | indent(6, first=True) }}
