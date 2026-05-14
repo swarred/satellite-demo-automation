@@ -63,6 +63,12 @@ sudo dnf install -y \
 # https://helm.sh/docs/intro/install/
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
+# flightctl CLI (required for enrollment cert generation and device approval)
+# Preflight installs this automatically, but you can pre-install it:
+curl -Lo /usr/local/bin/flightctl \
+  https://github.com/flightctl/flightctl/releases/download/v1.0.2/flightctl-linux-amd64 && \
+  chmod +x /usr/local/bin/flightctl
+
 # OpenShift CLI (oc) — download from your cluster's console or:
 # https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
 ```
@@ -76,7 +82,7 @@ sudo systemctl enable --now libvirtd firewalld
 #### Verify everything is in place
 
 ```bash
-for bin in podman oc virsh virt-install sshpass helm; do
+for bin in podman oc virsh virt-install sshpass helm flightctl; do
   command -v $bin &>/dev/null && echo "OK  $bin" || echo "MISSING  $bin"
 done
 systemctl is-active libvirtd firewalld
