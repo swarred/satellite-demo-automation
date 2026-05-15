@@ -118,19 +118,40 @@
 # Wait for the flightctl-agent on the VM to submit its enrollment request,
 # then auto-approve it with demo labels so the device appears in the UI.
 
+# Re-login here because image_build may have run 30-60 min ago and the CLI
+# session can go stale; also ensures the token is fresh before polling.
+- name: Get flightctl API route for re-login
+  command: >-
+    oc get route flightctl-api-route -n {{ flightctl_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _fc_api_host
+  changed_when: false
+
+- name: Re-login to flightctl CLI before polling enrollment requests
+  command: >-
+    flightctl login https://{{ _fc_api_host.stdout | trim }}
+    --token={{ ocp_token }}
+    --insecure-skip-tls-verify
+  no_log: true
+  changed_when: true
+
 - name: Wait for satellite-sim enrollment request to appear
   shell: >-
     flightctl get enrollmentrequests -o json 2>/dev/null |
     python3 -c "
     import sys, json
-    items = json.load(sys.stdin).get('items', [])
-    print(items[0]['metadata']['name'] if items else '')
+    try:
+      items = json.load(sys.stdin).get('items', [])
+      print(items[0]['metadata']['name'] if items else '')
+    except Exception:
+      print('')
     "
   register: _er_name
   until: _er_name.stdout | trim | length > 0
   retries: 30
   delay: 10
   changed_when: false
+  failed_when: false
 
 - name: Approve enrollment request with demo labels
   command: >-
