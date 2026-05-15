@@ -10,6 +10,21 @@
       - "will scale up a second worker automatically if only 1 is present, but"
       - "this adds ~5 minutes to the run.  Pre-provisioning avoids the wait."
 
+# ── flightctl CLI (install before binary check so it appears in the loop) ──────
+
+- name: Check if flightctl CLI is installed
+  stat:
+    path: /usr/local/bin/flightctl
+  register: _flightctl_binary
+
+- name: Install flightctl CLI v{{ flightctl_chart_version }}
+  become: true
+  get_url:
+    url: "https://github.com/flightctl/flightctl/releases/download/v{{ flightctl_chart_version }}/flightctl-linux-amd64"
+    dest: /usr/local/bin/flightctl
+    mode: '0755'
+  when: not _flightctl_binary.stat.exists
+
 # ── Required binaries ─────────────────────────────────────────────────────────
 - name: Check required binaries
   command: which {{ item }}
@@ -23,6 +38,7 @@
     - virt-install
     - sshpass
     - helm
+    - flightctl
 
 - name: Assert all required binaries are present
   assert:
@@ -95,21 +111,6 @@
 # Install Ollama and pull the model if not already present.
 # The image_build role copies these from the host into the build context
 # so no network access is needed inside the container build.
-
-# ── flightctl CLI ─────────────────────────────────────────────────────────────
-
-- name: Check if flightctl CLI is installed
-  stat:
-    path: /usr/local/bin/flightctl
-  register: _flightctl_binary
-
-- name: Install flightctl CLI v{{ flightctl_chart_version }}
-  become: true
-  get_url:
-    url: "https://github.com/flightctl/flightctl/releases/download/v{{ flightctl_chart_version }}/flightctl-linux-amd64"
-    dest: /usr/local/bin/flightctl
-    mode: '0755'
-  when: not _flightctl_binary.stat.exists
 
 # ── Ollama + llama3.2:1b (required for offline satellite image build) ─────────
 - name: Check if Ollama is installed
