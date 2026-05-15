@@ -1,0 +1,119 @@
+---
+# ── Pre-requisites ─────────────────────────────────────────────────────────────
+
+- name: Get flightctl API route (datasource base URL)
+  command: >-
+    oc get route flightctl-api-route -n {{ flightctl_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _fc_api_host
+  changed_when: false
+
+# ── Service account and SCC ────────────────────────────────────────────────────
+# Grafana runs as UID 472; OCP's restricted SCC blocks this by default.
+# anyuid SCC allows the pod to run as its declared UID without a namespace range.
+
+- name: Create Grafana service account
+  shell: >-
+    oc create serviceaccount satellite-grafana
+    -n {{ ocp_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
+- name: Grant anyuid SCC to Grafana service account
+  command: >-
+    oc adm policy add-scc-to-user anyuid
+    system:serviceaccount:{{ ocp_namespace }}:satellite-grafana
+  changed_when: true
+
+# ── Token for flightctl API ────────────────────────────────────────────────────
+# Infinity datasource proxies requests server-side; the token never reaches the
+# browser.  1-year expiry covers the typical demo cluster lifetime.
+
+- name: Get Grafana SA token for flightctl API (1-year expiry)
+  command: >-
+    oc create token satellite-grafana
+    -n {{ ocp_namespace }}
+    --duration=8760h
+  register: _grafana_token
+  changed_when: false
+  no_log: true
+
+# ── ConfigMaps ─────────────────────────────────────────────────────────────────
+
+- name: Template Grafana datasource config
+  template:
+    src: grafana-datasource.yml.j2
+    dest: /tmp/grafana-datasource.yml
+    mode: '0600'
+
+- name: Template Grafana dashboard provider config
+  template:
+    src: grafana-dashboard-provider.yml.j2
+    dest: /tmp/grafana-dashboard-provider.yml
+    mode: '0644'
+
+- name: Template satellite dashboard JSON
+  template:
+    src: satellite-dashboard.json.j2
+    dest: /tmp/satellite-dashboard.json
+    mode: '0644'
+
+- name: Apply Grafana datasource ConfigMap
+  shell: >-
+    oc create configmap grafana-datasources
+    --from-file=datasource.yaml=/tmp/grafana-datasource.yml
+    -n {{ ocp_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
+- name: Apply Grafana dashboard provider ConfigMap
+  shell: >-
+    oc create configmap grafana-dashboard-provider
+    --from-file=provider.yaml=/tmp/grafana-dashboard-provider.yml
+    -n {{ ocp_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
+- name: Apply satellite dashboard ConfigMap
+  shell: >-
+    oc create configmap satellite-dashboard
+    --from-file=satellite.json=/tmp/satellite-dashboard.json
+    -n {{ ocp_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
+# ── Grafana Deployment, Service, Route ─────────────────────────────────────────
+
+- name: Template Grafana manifests
+  template:
+    src: grafana-manifests.yml.j2
+    dest: /tmp/grafana-manifests.yml
+    mode: '0644'
+
+- name: Apply Grafana Deployment, Service, and Route
+  command: oc apply -f /tmp/grafana-manifests.yml -n {{ ocp_namespace }}
+  changed_when: true
+
+- name: Wait for Grafana rollout
+  command: >-
+    oc rollout status deployment/{{ grafana_service_name }}
+    -n {{ ocp_namespace }}
+    --timeout=300s
+  changed_when: false
+
+# ── Output ─────────────────────────────────────────────────────────────────────
+
+- name: Get Grafana route URL
+  command: >-
+    oc get route {{ grafana_service_name }}
+    -n {{ ocp_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: grafana_route_host
+  changed_when: false
+
+- name: Display Grafana URL
+  debug:
+    msg:
+      - "Grafana: https://{{ grafana_route_host.stdout }}"
+      - "Login:   admin / {{ grafana_admin_password }}"
+      - "Dashboard: Satellite Edge Status"

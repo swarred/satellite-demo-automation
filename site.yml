@@ -34,6 +34,7 @@
     - edge_manager    # install Red Hat Edge Manager (flightctl) on OCP; scales worker node if needed
     - skupper_grant   # OCP login, namespace, skupper site+listener, AccessGrant, extract token
     - ocp_deploy      # in-cluster build + deploy ground station + MaaS secret; captures route URL
+    - grafana_deploy  # deploy Grafana with Infinity datasource + satellite edge status dashboard
     - image_build     # podman build both satellite images (offline first, then online with route URL)
     - bootc_convert   # become: root — convert online image to qcow2 via bootc-image-builder
     - vm_deploy       # become: root — virt-install + wait for SSH
@@ -54,6 +55,12 @@
     - name: Get flightctl UI route
       command: oc get route flightctl-ui -n {{ flightctl_namespace }} -o jsonpath='{.spec.host}'
       register: _fc_ui_route
+      changed_when: false
+      failed_when: false
+
+    - name: Get Grafana route
+      command: oc get route {{ grafana_service_name }} -n {{ ocp_namespace }} -o jsonpath='{.spec.host}'
+      register: _grafana_route
       changed_when: false
       failed_when: false
 
@@ -84,6 +91,8 @@
           - "  OCP Console:    https://{{ _console_route.stdout }}"
           - "  Ground Station: https://{{ _gs_route.stdout }}"
           - "  Edge Manager:   https://{{ _fc_ui_route.stdout }}"
+          - "  Grafana:        https://{{ _grafana_route.stdout }}"
+          - "                  admin / {{ grafana_admin_password }}"
           - ""
           - "── SATELLITE VM ────────────────────────────────────────"
           - "  IP:   {{ vm_ip }}"

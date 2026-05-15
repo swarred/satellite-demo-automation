@@ -10,7 +10,8 @@ Ansible playbooks that stand up and operate the full [satellite-demo](https://gi
 2. **RHSI operator** — installs the Red Hat Service Interconnect operator cluster-wide (`stable-2` channel) if not already present; waits for the CSV to reach Succeeded
 3. **Skupper setup** — creates the OCP namespace, Skupper site and listener, and AccessGrant; extracts the token for VM injection
 4. **Ground station deploy** — in-cluster binary build and deployment of the ground station pod; captures the route URL
-5. **Image build** — builds two satellite bootc images: `offline` first (Ollama + llama3.2:1b baked in), then `online` (EDA DDIL monitor, compiled with the live ground station route URL); pushes both to a local registry at `192.168.122.1:5000`
+5. **Grafana deploy** — deploys a Grafana instance in the same OCP namespace with a pre-built "Satellite Edge Status" dashboard: a full-screen stat panel showing live device status (ONLINE/OFFLINE) backed by the Infinity datasource polling the flightctl API, and a Geomap panel showing the satellite's ground-segment position colored by link state
+6. **Image build** — builds two satellite bootc images: `offline` first (Ollama + llama3.2:1b baked in), then `online` (EDA DDIL monitor, compiled with the live ground station route URL); pushes both to a local registry at `192.168.122.1:5000`
 6. **qcow2 conversion** — runs `bootc-image-builder` to produce the VM disk image from the online image
 7. **VM deploy** — provisions the KVM VM with cloud-init, injecting the live Skupper AccessGrant token
 
@@ -191,6 +192,10 @@ All defaults are in `group_vars/all.yml`. Key variables:
 | `flightctl_namespace` | `flightctl` | OCP namespace for the Edge Manager install |
 | `flightctl_chart_version` | `1.0.2` | flightctl Helm chart version |
 | `flightctl_admin_user` | `oc whoami` (auto-detected) | OCP username granted flightctl org-admin access; defaults to whoever is logged in |
+| `grafana_image` | `grafana/grafana:11.6.0` | Grafana container image |
+| `grafana_admin_password` | `satellite` | Grafana admin password (anonymous viewer access is also enabled) |
+| `grafana_satellite_lat` | `38.8028` | Latitude for the Geomap marker (default: Schriever SFB, CO) |
+| `grafana_satellite_lon` | `-104.5280` | Longitude for the Geomap marker |
 
 Override any variable on the command line:
 
@@ -209,6 +214,7 @@ ansible-playbook site.yml -e ocp_namespace=my-namespace --ask-become-pass
 | `edge_manager` | Installs Red Hat Edge Manager (flightctl 1.0.2) on OCP; scales worker MachineSet if needed; creates org label and admin RBAC binding |
 | `skupper_grant` | Creates OCP namespace, Skupper site/listener/AccessGrant, extracts token |
 | `ocp_deploy` | In-cluster binary build of ground station; captures route URL |
+| `grafana_deploy` | Deploys Grafana with Infinity datasource + satellite edge status dashboard (stat + geomap panels) |
 | `image_build` | Builds offline then online bootc images; starts local registry |
 | `bootc_convert` | Converts online image to qcow2 via bootc-image-builder |
 | `vm_deploy` | Provisions KVM VM with cloud-init and Skupper token |

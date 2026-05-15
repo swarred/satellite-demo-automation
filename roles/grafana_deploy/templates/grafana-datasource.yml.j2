@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: FlightCtl
+    type: yesoreyeram-infinity-datasource
+    uid: flightctl-ds
+    isDefault: true
+    access: proxy
+    url: "https://{{ _fc_api_host.stdout | trim }}"
+    jsonData:
+      auth_type: bearerToken
+      tlsSkipVerify: true
+      allowedHosts:
+        - "{{ _fc_api_host.stdout | trim }}"
+    secureJsonData:
+      bearerToken: "{{ _grafana_token.stdout | trim }}"
+    editable: true

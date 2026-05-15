@@ -1,0 +1,95 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ grafana_service_name }}
+  namespace: {{ ocp_namespace }}
+  labels:
+    app: {{ grafana_service_name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ grafana_service_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ grafana_service_name }}
+    spec:
+      serviceAccountName: satellite-grafana
+      securityContext:
+        runAsUser: 472
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: {{ grafana_image }}
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Plugin downloaded at pod startup — requires cluster internet access.
+            # On air-gapped clusters, bake the plugin into a custom Grafana image.
+            - name: GF_INSTALL_PLUGINS
+              value: "yesoreyeram-infinity-datasource"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "{{ grafana_admin_password }}"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Viewer"
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+      volumes:
+        - name: grafana-storage
+          emptyDir: {}
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        # Project both the dashboard provider config and the dashboard JSON into
+        # the same directory so Grafana picks up both on startup.
+        - name: dashboards
+          projected:
+            sources:
+              - configMap:
+                  name: grafana-dashboard-provider
+              - configMap:
+                  name: satellite-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ grafana_service_name }}
+  namespace: {{ ocp_namespace }}
+spec:
+  selector:
+    app: {{ grafana_service_name }}
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ grafana_service_name }}
+  namespace: {{ ocp_namespace }}
+spec:
+  to:
+    kind: Service
+    name: {{ grafana_service_name }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

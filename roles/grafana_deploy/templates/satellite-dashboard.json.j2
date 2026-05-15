@@ -1,0 +1,183 @@
+{
+  "id": null,
+  "uid": "satellite-edge",
+  "title": "Satellite Edge Status",
+  "tags": ["satellite", "edge", "flightctl"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-5m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Satellite Status",
+      "description": "Live device status from Red Hat Edge Manager",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim",
+          "root_selector": "items",
+          "columns": [
+            { "selector": "status.summary.status", "text": "status", "type": "string" }
+          ]
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^status$/",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "Online":  { "text": "ONLINE",  "color": "green",  "index": 0 },
+                "Unknown": { "text": "UNKNOWN", "color": "yellow", "index": 1 }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": { "text": "OFFLINE", "color": "red", "index": 2 }
+              }
+            }
+          ],
+          "noValue": "OFFLINE"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "geomap",
+      "title": "Ground Segment — {{ grafana_satellite_label }}",
+      "description": "Device location and link status. Marker turns red during DDIL.",
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim",
+          "root_selector": "items",
+          "columns": [
+            { "selector": "metadata.name",          "text": "device", "type": "string" },
+            { "selector": "status.summary.status",  "text": "status", "type": "string" }
+          ]
+        },
+        {
+          "refId": "B",
+          "type": "json",
+          "source": "inline",
+          "format": "table",
+          "data": "[{\"lat\": {{ grafana_satellite_lat }}, \"lon\": {{ grafana_satellite_lon }}}]",
+          "root_selector": "",
+          "columns": [
+            { "selector": "lat", "text": "lat", "type": "number" },
+            { "selector": "lon", "text": "lon", "type": "number" }
+          ]
+        }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": {{ grafana_satellite_lat }},
+          "lon": {{ grafana_satellite_lon }},
+          "zoom": 5
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false
+        },
+        "basemap": { "type": "default", "name": "Basemap" },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Satellite Sim",
+            "config": {
+              "size":   { "fixed": 20, "min": 2, "max": 40, "field": "" },
+              "color":  { "field": "status", "fixed": "green" },
+              "symbol": { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
+              "fillOpacity": 0.8,
+              "showLegend": true
+            },
+            "location": {
+              "mode": "coords",
+              "latitudeField": "lat",
+              "longitudeField": "lon"
+            },
+            "tooltip": true
+          }
+        ],
+        "tooltip": { "mode": "details" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Online":  { "text": "Online",  "color": "green",  "index": 0 },
+                      "Unknown": { "text": "Unknown", "color": "yellow", "index": 1 }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null+nan",
+                      "result": { "text": "Offline", "color": "red", "index": 2 }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
