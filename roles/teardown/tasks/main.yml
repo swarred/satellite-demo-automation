@@ -82,7 +82,7 @@
   changed_when: true
 
 - name: Delete satellite-sim devices from Edge Manager
-  shell: >-
+  shell: |
     flightctl get devices -l role=satellite-sim -o json 2>/dev/null |
     python3 -c "
     import sys, json, subprocess
