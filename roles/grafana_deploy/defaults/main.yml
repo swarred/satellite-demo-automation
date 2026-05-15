@@ -3,8 +3,9 @@ grafana_image: "docker.io/grafana/grafana:11.6.0"
 grafana_service_name: satellite-grafana
 grafana_admin_password: satellite
 
-# Hardcoded ground-segment position for the Geomap panel.
-# Schriever Space Force Base, Colorado Springs, CO.
-grafana_satellite_lat: "38.8028"
-grafana_satellite_lon: "-104.5280"
-grafana_satellite_label: "Schriever SFB, CO"
+# Satellite AOI position for the Geomap panel.
+# Persian Gulf — the demo scenario's area of interest.
+# Override to reposition: -e grafana_satellite_lat=... -e grafana_satellite_lon=...
+grafana_satellite_lat: "26.5"
+grafana_satellite_lon: "51.5"
+grafana_satellite_label: "Persian Gulf AOI"
