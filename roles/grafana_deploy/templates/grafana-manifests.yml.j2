@@ -44,6 +44,11 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboards
               mountPath: /etc/grafana/provisioning/dashboards
+            # Mount OCP ingress CA as a single file so Go's TLS stack picks it
+            # up from the cert directory without replacing the default bundle.
+            - name: ocp-ca
+              mountPath: /etc/ssl/certs/ocp-ca.pem
+              subPath: ocp-ca.pem
           readinessProbe:
             httpGet:
               path: /api/health
@@ -65,6 +70,9 @@ spec:
                   name: grafana-dashboard-provider
               - configMap:
                   name: satellite-dashboard
+        - name: ocp-ca
+          configMap:
+            name: grafana-ocp-ca
 ---
 apiVersion: v1
 kind: Service

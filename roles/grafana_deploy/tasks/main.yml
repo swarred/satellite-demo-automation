@@ -8,6 +8,31 @@
   register: _fc_api_host
   changed_when: false
 
+# Fetch the OCP ingress router CA so Grafana's Go TLS stack trusts the flightctl
+# API route.  Infinity's backend HTTP client does not honour tlsSkipVerify from
+# jsonData; mounting the CA into /etc/ssl/certs/ (a directory Go scans at
+# startup) is the reliable fix without disabling TLS globally.
+- name: Get OCP ingress router CA cert
+  shell: >-
+    oc get secret router-ca -n openshift-ingress-operator
+    -o jsonpath='{.data.tls\.crt}' | base64 -d
+  register: _ocp_ingress_ca
+  changed_when: false
+
+- name: Write OCP ingress CA to temp file
+  copy:
+    content: "{{ _ocp_ingress_ca.stdout }}"
+    dest: /tmp/ocp-ingress-ca.pem
+    mode: '0644'
+
+- name: Create OCP ingress CA ConfigMap for Grafana trust store
+  shell: >-
+    oc create configmap grafana-ocp-ca
+    --from-file=ocp-ca.pem=/tmp/ocp-ingress-ca.pem
+    -n {{ ocp_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
 # ── Service account and SCC ────────────────────────────────────────────────────
 # Grafana runs as UID 472; OCP's restricted SCC blocks this by default.
 # anyuid SCC allows the pod to run as its declared UID without a namespace range.
