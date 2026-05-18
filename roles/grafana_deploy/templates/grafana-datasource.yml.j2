@@ -7,10 +7,10 @@ datasources:
     access: proxy
     url: "https://{{ _fc_api_host.stdout | trim }}"
     jsonData:
-      auth_type: bearerToken
+      auth_method: bearerToken
       tlsSkipVerify: true
       allowedHosts:
-        - "{{ _fc_api_host.stdout | trim }}"
+        - "https://{{ _fc_api_host.stdout | trim }}"
     secureJsonData:
       bearerToken: "{{ _grafana_token.stdout | trim }}"
     editable: true

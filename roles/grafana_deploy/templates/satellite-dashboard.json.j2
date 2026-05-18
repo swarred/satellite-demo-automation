@@ -16,7 +16,7 @@
       "id": 1,
       "type": "stat",
       "title": "Satellite Status",
-      "description": "Live device status from Red Hat Edge Manager",
+      "description": "Live device status from Red Hat Edge Manager. Reads summaryStatus.Online count from the fleet API response.",
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
       "targets": [
@@ -25,17 +25,13 @@
           "type": "json",
           "source": "url",
           "format": "table",
-          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim",
-          "root_selector": "items",
-          "columns": [
-            { "selector": "status.summary.status", "text": "status", "type": "string" }
-          ]
+          "url": "https://{{ _fc_api_host.stdout | trim }}/api/v1/devices?labelSelector=role%3Dsatellite-sim"
         }
       ],
       "options": {
         "reduceOptions": {
           "calcs": ["lastNotNull"],
-          "fields": "/^status$/",
+          "fields": "/^summary$/",
           "values": false
         },
         "orientation": "horizontal",
@@ -53,17 +49,17 @@
           },
           "mappings": [
             {
-              "type": "value",
+              "type": "regex",
               "options": {
-                "Online":  { "text": "ONLINE",  "color": "green",  "index": 0 },
-                "Unknown": { "text": "UNKNOWN", "color": "yellow", "index": 1 }
+                "pattern": "\"Online\":[1-9]",
+                "result": { "text": "ONLINE", "color": "green", "index": 0 }
               }
             },
             {
               "type": "special",
               "options": {
                 "match": "null+nan",
-                "result": { "text": "OFFLINE", "color": "red", "index": 2 }
+                "result": { "text": "OFFLINE", "color": "red", "index": 1 }
               }
             }
           ],
@@ -85,12 +81,7 @@
           "type": "json",
           "source": "url",
           "format": "table",
-          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim",
-          "root_selector": "items",
-          "columns": [
-            { "selector": "metadata.name",          "text": "device", "type": "string" },
-            { "selector": "status.summary.status",  "text": "status", "type": "string" }
-          ]
+          "url": "https://{{ _fc_api_host.stdout | trim }}/api/v1/devices?labelSelector=role%3Dsatellite-sim"
         },
         {
           "refId": "B",
@@ -128,7 +119,7 @@
             "name": "Satellite Sim",
             "config": {
               "size":   { "fixed": 20, "min": 2, "max": 40, "field": "" },
-              "color":  { "field": "status", "fixed": "green" },
+              "color":  { "field": "summary", "fixed": "green" },
               "symbol": { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
               "fillOpacity": 0.8,
               "showLegend": true
@@ -153,23 +144,23 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "status" },
+            "matcher": { "id": "byName", "options": "summary" },
             "properties": [
               {
                 "id": "mappings",
                 "value": [
                   {
-                    "type": "value",
+                    "type": "regex",
                     "options": {
-                      "Online":  { "text": "Online",  "color": "green",  "index": 0 },
-                      "Unknown": { "text": "Unknown", "color": "yellow", "index": 1 }
+                      "pattern": "\"Online\":[1-9]",
+                      "result": { "text": "Online", "color": "green", "index": 0 }
                     }
                   },
                   {
                     "type": "special",
                     "options": {
                       "match": "null+nan",
-                      "result": { "text": "Offline", "color": "red", "index": 2 }
+                      "result": { "text": "Offline", "color": "red", "index": 1 }
                     }
                   }
                 ]

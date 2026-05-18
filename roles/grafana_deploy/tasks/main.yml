@@ -50,6 +50,20 @@
     system:serviceaccount:{{ ocp_namespace }}:satellite-grafana
   changed_when: true
 
+# ── flightctl RBAC for Grafana SA ─────────────────────────────────────────────
+# flightctl resolves authorization via OCP namespace-scoped RoleBindings in the
+# flightctl namespace.  Without a binding the SA token gets HTTP 200 with zero
+# items — same empty-list behaviour as an unrecognised user.
+
+- name: Bind Grafana SA to flightctl-org-admin role in flightctl namespace
+  shell: >-
+    oc create rolebinding grafana-flightctl-readonly
+    --clusterrole=flightctl-org-admin-{{ flightctl_namespace }}
+    --serviceaccount={{ ocp_namespace }}:satellite-grafana
+    -n {{ flightctl_namespace }}
+    --dry-run=client -o yaml | oc apply -f -
+  changed_when: true
+
 # ── Token for flightctl API ────────────────────────────────────────────────────
 # Infinity datasource proxies requests server-side; the token never reaches the
 # browser.  1-year expiry covers the typical demo cluster lifetime.
