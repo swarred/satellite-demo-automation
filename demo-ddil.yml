@@ -52,7 +52,19 @@
       shell: |
         sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} bash -s <<'ENDSSH'
         curl -s -X POST http://localhost:8080/alerts/clear > /dev/null
-        sudo truncate -s 0 /var/lib/satellite-sim/alerts.jsonl 2>/dev/null || true
+        sudo python3 -c "
+import json, os
+f = '/var/lib/satellite-sim/alerts.jsonl'
+if os.path.exists(f):
+    lines = []
+    for l in open(f):
+        try:
+            d = json.loads(l)
+            if d.get('classification', 'UNKNOWN_EMITTER') != 'UNKNOWN_EMITTER':
+                lines.append(l)
+        except: pass
+    open(f, 'w').writelines(lines)
+" 2>/dev/null || true
         sudo rm -f /var/lib/satellite-sim/offline-queue.jsonl.loaded 2>/dev/null || true
         ENDSSH
       changed_when: true
