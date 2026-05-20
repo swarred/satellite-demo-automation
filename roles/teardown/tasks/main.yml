@@ -73,6 +73,11 @@
   failed_when: false
   changed_when: true
 
+- name: Remove registry data volume
+  command: podman volume rm {{ local_registry_name }}-data
+  failed_when: false
+  changed_when: true
+
 - name: Close local registry port in libvirt firewall zone
   shell: |
     firewall-cmd --zone=libvirt --remove-port={{ local_registry_port }}/tcp --permanent

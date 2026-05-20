@@ -158,7 +158,11 @@
     flightctl approve enrollmentrequest/{{ _er_name.stdout | trim }}
     -l role=satellite-sim
     -l demo=ussf-ddil
-  changed_when: true
+  register: _approve_result
+  failed_when:
+    - _approve_result.rc != 0
+    - "'already approved' not in (_approve_result.stderr | default(''))"
+  changed_when: _approve_result.rc == 0
 
 - name: Display VM connection info
   debug:

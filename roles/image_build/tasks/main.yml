@@ -13,12 +13,21 @@
   failed_when: false
   changed_when: false
 
+- name: Create registry data volume (idempotent)
+  command: podman volume create {{ local_registry_name }}-data
+  register: _vol_create
+  changed_when: "'already exists' not in (_vol_create.stderr | default(''))"
+  failed_when:
+    - _vol_create.rc != 0
+    - "'already exists' not in (_vol_create.stderr | default(''))"
+
 - name: Start local image registry on KVM bridge
   command: >-
     podman run -d
     --name {{ local_registry_name }}
     -p {{ local_registry_port }}:5000
     --restart always
+    -v {{ local_registry_name }}-data:/var/lib/registry
     docker.io/library/registry:2
   changed_when: true
 
