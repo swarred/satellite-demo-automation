@@ -46,6 +46,23 @@
 
     # ── Trigger DDIL ─────────────────────────────────────────────────────────
 
+    # ── Reset alert state for clean demo run ────────────────────────────────────
+
+    - name: "[SETUP] Clear satellite alert history and ground station cache"
+      shell: |
+        sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} bash -s <<'ENDSSH'
+        curl -s -X POST http://localhost:8080/alerts/clear > /dev/null
+        sudo truncate -s 0 /var/lib/satellite-sim/alerts.jsonl 2>/dev/null || true
+        sudo rm -f /var/lib/satellite-sim/offline-queue.jsonl.loaded 2>/dev/null || true
+        ENDSSH
+      changed_when: true
+
+    - name: "[SETUP] Clear ground station alert cache"
+      command: >-
+        curl -sk -X POST https://{{ gs_route.stdout }}/demo/clear-alerts
+      changed_when: true
+      failed_when: false
+
     - name: "[DDIL] Break ground station link — Skupper stopped, UI shows LINK DOWN"
       shell: "sshpass -p satellite ssh {{ ssh_opts }} demo@{{ vm_ip }} 'sudo systemctl stop skupper-satellite-vm.service 2>/dev/null || true'"
       changed_when: true
