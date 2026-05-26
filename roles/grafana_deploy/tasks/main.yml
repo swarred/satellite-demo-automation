@@ -64,19 +64,6 @@
     --dry-run=client -o yaml | oc apply -f -
   changed_when: true
 
-# ── Token for flightctl API ────────────────────────────────────────────────────
-# Infinity datasource proxies requests server-side; the token never reaches the
-# browser.  1-year expiry covers the typical demo cluster lifetime.
-
-- name: Get Grafana SA token for flightctl API (1-year expiry)
-  command: >-
-    oc create token satellite-grafana
-    -n {{ ocp_namespace }}
-    --duration=8760h
-  register: _grafana_token
-  changed_when: false
-  no_log: true
-
 # ── ConfigMaps ─────────────────────────────────────────────────────────────────
 
 - name: Template Grafana datasource config
