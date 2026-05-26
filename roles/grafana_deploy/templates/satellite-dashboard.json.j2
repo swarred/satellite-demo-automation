@@ -16,7 +16,7 @@
       "id": 1,
       "type": "stat",
       "title": "Satellite Status",
-      "description": "Fleet-level Online count from flightctl DeviceList summary.summaryStatus.Online.",
+      "description": "Live device status — reads summary string from flightctl DeviceList and regex-matches Online count.",
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
       "targets": [
@@ -29,24 +29,11 @@
           "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim"
         }
       ],
-      "transformations": [
-        {
-          "id": "extractFields",
-          "options": { "source": "summary", "format": "json", "replace": false, "keepTime": false }
-        },
-        {
-          "id": "extractFields",
-          "options": { "source": "summaryStatus", "format": "json", "replace": false, "keepTime": false }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": { "include": { "names": ["Online"] } }
-        }
-      ],
+      "transformations": [],
       "options": {
         "reduceOptions": {
           "calcs": ["lastNotNull"],
-          "fields": "",
+          "fields": "/^summary$/",
           "values": false
         },
         "orientation": "horizontal",
@@ -60,24 +47,21 @@
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              { "color": "red",   "value": null },
-              { "color": "green", "value": 1    }
-            ]
+            "steps": [{ "color": "red", "value": null }]
           },
           "mappings": [
             {
-              "type": "value",
+              "type": "regex",
               "options": {
-                "1": { "text": "ONLINE",  "color": "green", "index": 0 },
-                "0": { "text": "OFFLINE", "color": "red",   "index": 1 }
+                "pattern": "\"Online\":[1-9]",
+                "result": { "text": "ONLINE", "color": "green", "index": 0 }
               }
             },
             {
               "type": "special",
               "options": {
                 "match": "null+nan",
-                "result": { "text": "OFFLINE", "color": "red", "index": 2 }
+                "result": { "text": "OFFLINE", "color": "red", "index": 1 }
               }
             }
           ],
@@ -90,41 +74,19 @@
       "id": 2,
       "type": "geomap",
       "title": "Satellite AOI — {{ grafana_satellite_label }}",
-      "description": "Satellite position over area of interest. Marker turns red when link is lost (DDIL).",
+      "description": "Fixed AOI marker. Satellite Status panel above shows live link state.",
       "gridPos": { "h": 18, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
       "targets": [
         {
           "refId": "A",
           "type": "json",
-          "source": "url",
-          "format": "table",
-          "method": "GET",
-          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim"
-        },
-        {
-          "refId": "B",
-          "type": "json",
           "source": "inline",
           "format": "table",
           "data": "[{\"lat\": {{ grafana_satellite_lat }}, \"lon\": {{ grafana_satellite_lon }}}]"
         }
       ],
-      "transformations": [
-        {
-          "id": "extractFields",
-          "options": { "source": "summary", "format": "json", "replace": false, "keepTime": false }
-        },
-        {
-          "id": "extractFields",
-          "options": { "source": "summaryStatus", "format": "json", "replace": false, "keepTime": false }
-        },
-        { "id": "merge", "options": {} },
-        {
-          "id": "filterFieldsByName",
-          "options": { "include": { "names": ["lat", "lon", "Online"] } }
-        }
-      ],
+      "transformations": [],
       "options": {
         "view": {
           "id": "coords",
@@ -145,7 +107,7 @@
             "name": "Satellite Sim",
             "config": {
               "size":        { "fixed": 20, "min": 2, "max": 40, "field": "" },
-              "color":       { "field": "Online", "fixed": "green" },
+              "color":       { "fixed": "green" },
               "symbol":      { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
               "fillOpacity": 0.8,
               "showLegend":  true
@@ -162,13 +124,10 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": { "mode": "fixed", "fixedColor": "green" },
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              { "color": "red",   "value": null },
-              { "color": "green", "value": 1    }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           }
         },
         "overrides": []
