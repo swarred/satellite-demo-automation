@@ -1,6 +1,13 @@
 ---
 # ── Pre-requisites ─────────────────────────────────────────────────────────────
 
+- name: Get ground station route (for status panel JavaScript URL)
+  command: >-
+    oc get route ground-station -n {{ ocp_namespace }}
+    -o jsonpath='{.spec.host}'
+  register: _gs_route_host
+  changed_when: false
+
 - name: Get flightctl API route (datasource base URL)
   command: >-
     oc get route flightctl-api-route -n {{ flightctl_namespace }}

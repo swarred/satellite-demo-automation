@@ -31,6 +31,8 @@ spec:
             # On air-gapped clusters, bake the plugin into a custom Grafana image.
             - name: GF_INSTALL_PLUGINS
               value: "yesoreyeram-infinity-datasource"
+            - name: GF_PANELS_DISABLE_SANITIZE_HTML
+              value: "true"
             - name: GF_SECURITY_ADMIN_PASSWORD
               value: "{{ grafana_admin_password }}"
             - name: GF_AUTH_ANONYMOUS_ENABLED

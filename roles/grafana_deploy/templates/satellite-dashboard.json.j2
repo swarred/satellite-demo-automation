@@ -14,67 +14,21 @@
   "panels": [
     {
       "id": 1,
-      "type": "stat",
+      "type": "text",
       "title": "Satellite Status",
-      "description": "Live device status — reads summary string from flightctl DeviceList and regex-matches Online count.",
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "format": "table",
-          "method": "GET",
-          "url": "/api/v1/devices?labelSelector=role%3Dsatellite-sim"
-        }
-      ],
-      "transformations": [],
+      "datasource": null,
       "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "/^summary$/",
-          "values": false
-        },
-        "orientation": "horizontal",
-        "textMode": "value",
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "red", "value": null }]
-          },
-          "mappings": [
-            {
-              "type": "regex",
-              "options": {
-                "pattern": "\"Online\":[1-9]",
-                "result": { "text": "ONLINE", "color": "green", "index": 0 }
-              }
-            },
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": { "text": "OFFLINE", "color": "red", "index": 1 }
-              }
-            }
-          ],
-          "noValue": "OFFLINE"
-        },
-        "overrides": []
+        "mode": "html",
+        "code": { "language": "html", "showLineNumbers": false, "showMiniMap": false },
+        "content": "<div id='sat-status' style='display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif'><span style='font-size:3em;font-weight:bold;color:#888'>Loading...</span></div><script>(function(){var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';function update(){fetch(url).then(function(r){return r.json()}).then(function(d){var online=d[0]&&d[0].online===1;var el=document.getElementById('sat-status');el.style.background=online?'#1a5c2a':'#6b0f1a';el.innerHTML='<span style=\"font-size:4em;font-weight:bold;color:'+(online?'#52c41a':'#ff4d4f')+'\">'+(online?'ONLINE':'OFFLINE')+'</span>';}).catch(function(){});}update();setInterval(update,5000);})();</script>"
       }
     },
     {
       "id": 2,
       "type": "geomap",
       "title": "Satellite AOI — {{ grafana_satellite_label }}",
-      "description": "Fixed AOI marker. Satellite Status panel above shows live link state.",
+      "description": "Area of interest marker. Satellite Status panel above shows live link state.",
       "gridPos": { "h": 18, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
       "targets": [
@@ -92,44 +46,29 @@
           "id": "coords",
           "lat": {{ grafana_satellite_lat }},
           "lon": {{ grafana_satellite_lon }},
-          "zoom": 5
+          "zoom": 4
         },
-        "controls": {
-          "showZoom": true,
-          "mouseWheelZoom": true,
-          "showAttribution": true,
-          "showScale": false
-        },
+        "controls": { "showZoom": true, "mouseWheelZoom": true, "showAttribution": true, "showScale": false },
         "basemap": { "type": "default", "name": "Basemap" },
         "layers": [
           {
             "type": "markers",
-            "name": "Satellite Sim",
+            "name": "Satellite AOI",
             "config": {
-              "size":        { "fixed": 20, "min": 2, "max": 40, "field": "" },
+              "size":        { "fixed": 20 },
               "color":       { "fixed": "green" },
               "symbol":      { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
-              "fillOpacity": 0.8,
+              "fillOpacity": 0.9,
               "showLegend":  true
             },
-            "location": {
-              "mode": "coords",
-              "latitudeField": "lat",
-              "longitudeField": "lon"
-            },
+            "location": { "mode": "coords", "latitudeField": "lat", "longitudeField": "lon" },
             "tooltip": true
           }
         ],
         "tooltip": { "mode": "details" }
       },
       "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "green" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          }
-        },
+        "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } },
         "overrides": []
       }
     }
