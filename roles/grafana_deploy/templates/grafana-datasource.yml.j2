@@ -15,3 +15,12 @@ datasources:
     secureJsonData:
       httpHeaderValue1: "Bearer {{ ocp_token }}"
     editable: true
+  - name: GroundStation
+    type: yesoreyeram-infinity-datasource
+    uid: groundstation-ds
+    isDefault: false
+    access: direct
+    url: "https://{{ _gs_route_host.stdout | trim }}"
+    jsonData:
+      auth_method: none
+    editable: true
