@@ -73,18 +73,10 @@
         "y": 9
       },
       "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "groundstation-ds"
+        "type": "datasource",
+        "uid": "-- Grafana --"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "inline",
-          "format": "table",
-          "data": "[{\"lat\":26.5,\"lon\":51.5}]"
-        }
-      ],
+      "targets": [],
       "transformations": [],
       "options": {
         "view": {
@@ -105,30 +97,22 @@
         },
         "layers": [
           {
-            "type": "markers",
+            "type": "geojson",
             "name": "Satellite AOI",
             "config": {
-              "size": {
-                "fixed": 20,
-                "min": 2,
-                "max": 40
-              },
-              "color": {
-                "fixed": "green"
-              },
-              "symbol": {
-                "fixed": "img/icons/marker/circle.svg",
-                "mode": "fixed"
-              },
-              "fillOpacity": 0.9,
-              "showLegend": true
+              "src": "https://{{ _gs_route_host.stdout | trim }}/grafana/aoi.geojson",
+              "style": {
+                "size": {
+                  "fixed": 14
+                },
+                "color": {
+                  "fixed": "green"
+                },
+                "fillOpacity": 1
+              }
             },
-            "location": {
-              "mode": "coords",
-              "latitudeField": "lat",
-              "longitudeField": "lon"
-            },
-            "tooltip": true
+            "tooltip": true,
+            "opacity": 1
           }
         ],
         "tooltip": {
@@ -136,12 +120,7 @@
         }
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          }
-        },
+        "defaults": {},
         "overrides": []
       }
     }
