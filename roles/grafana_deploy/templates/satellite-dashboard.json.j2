@@ -2,11 +2,18 @@
   "id": null,
   "uid": "satellite-edge",
   "title": "Satellite Edge Status",
-  "tags": ["satellite", "edge", "flightctl"],
+  "tags": [
+    "satellite",
+    "edge",
+    "flightctl"
+  ],
   "schemaVersion": 39,
   "version": 1,
   "refresh": "10s",
-  "time": { "from": "now-5m", "to": "now" },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "graphTooltip": 0,
@@ -16,59 +23,103 @@
       "id": 1,
       "type": "text",
       "title": "Satellite Status",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "datasource": null,
       "options": {
         "mode": "html",
-        "code": { "language": "html", "showLineNumbers": false, "showMiniMap": false },
-        "content": "<div id='sat-status' style='display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif'><span style='font-size:3em;font-weight:bold;color:#888'>Loading...</span></div><script>(function(){var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';function update(){fetch(url).then(function(r){return r.json()}).then(function(d){var online=d[0]&&d[0].online===1;var el=document.getElementById('sat-status');el.style.background=online?'#1a5c2a':'#6b0f1a';el.innerHTML='<span style=\"font-size:4em;font-weight:bold;color:'+(online?'#52c41a':'#ff4d4f')+'\">'+(online?'ONLINE':'OFFLINE')+'</span>';}).catch(function(){});}update();setInterval(update,5000);})();</script>"
+        "code": {
+          "language": "html",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div id='sat-status' style='display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif'><span style='font-size:3em;font-weight:bold;color:#888'>Loading...</span></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  var OID='sat-offline-overlay';\n  function getOverlay(){\n    var o=document.getElementById(OID);\n    if(o) return o;\n    var mp=document.querySelector('[data-panelid=\"2\"]');\n    if(!mp) return null;\n    var ct=mp.querySelector('[class*=\"panel-content\"]');\n    if(!ct) return null;\n    ct.style.position='relative';\n    o=document.createElement('div');\n    o.id=OID;\n    o.style.cssText='position:absolute;inset:0;background:rgba(200,30,30,0.22);z-index:1000;pointer-events:none;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;';\n    o.innerHTML='<div style=\"font-family:monospace;font-size:2.8em;font-weight:bold;color:#ff4d4f;letter-spacing:5px;text-shadow:0 0 30px rgba(255,50,50,0.9);animation:lsp 1.5s ease-in-out infinite\">LINK SEVERED</div><div style=\"font-family:monospace;font-size:1.1em;color:#ff9999;letter-spacing:3px\">AUTONOMOUS OPS ACTIVE</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.4}}</style>';\n    ct.appendChild(o);\n    return o;\n  }\n  function update(){\n    fetch(url).then(function(r){return r.json()}).then(function(d){\n      var online=d[0]&&d[0].online===1;\n      var el=document.getElementById('sat-status');\n      if(el){el.style.background=online?'#1a5c2a':'#6b0f1a';el.innerHTML='<span style=\"font-size:4em;font-weight:bold;color:'+(online?'#52c41a':'#ff4d4f')+'\">'+(online?'ONLINE':'OFFLINE')+'</span>';}\n      var ov=getOverlay();\n      if(ov) ov.style.display=online?'none':'flex';\n    }).catch(function(){});\n  }\n  update();setInterval(update,5000);\n})();</script>"
       }
     },
     {
       "id": 2,
       "type": "geomap",
-      "title": "Satellite AOI — {{ grafana_satellite_label }}",
-      "description": "Area of interest marker. Satellite Status panel above shows live link state.",
-      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 6 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "flightctl-ds" },
+      "title": "Satellite AOI \u2014 Persian Gulf",
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "flightctl-ds"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "inline",
           "format": "table",
-          "data": "[{\"lat\": {{ grafana_satellite_lat }}, \"lon\": {{ grafana_satellite_lon }}}]"
+          "data": "[{\"lat\":26.5,\"lon\":51.5}]"
         }
       ],
       "transformations": [],
       "options": {
         "view": {
           "id": "coords",
-          "lat": {{ grafana_satellite_lat }},
-          "lon": {{ grafana_satellite_lon }},
+          "lat": 26.5,
+          "lon": 51.5,
           "zoom": 4
         },
-        "controls": { "showZoom": true, "mouseWheelZoom": true, "showAttribution": true, "showScale": false },
-        "basemap": { "type": "default", "name": "Basemap" },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Basemap"
+        },
         "layers": [
           {
             "type": "markers",
             "name": "Satellite AOI",
             "config": {
-              "size":        { "fixed": 20 },
-              "color":       { "fixed": "green" },
-              "symbol":      { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
+              "size": {
+                "fixed": 20,
+                "min": 2,
+                "max": 40
+              },
+              "color": {
+                "fixed": "green"
+              },
+              "symbol": {
+                "fixed": "img/icons/marker/circle.svg",
+                "mode": "fixed"
+              },
               "fillOpacity": 0.9,
-              "showLegend":  true
+              "showLegend": true
             },
-            "location": { "mode": "coords", "latitudeField": "lat", "longitudeField": "lon" },
+            "location": {
+              "mode": "coords",
+              "latitudeField": "lat",
+              "longitudeField": "lon"
+            },
             "tooltip": true
           }
         ],
-        "tooltip": { "mode": "details" }
+        "tooltip": {
+          "mode": "details"
+        }
       },
       "fieldConfig": {
-        "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } },
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
         "overrides": []
       }
     }
