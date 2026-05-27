@@ -59,7 +59,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "<div id='lnk' style='display:flex;align-items:center;justify-content:center;height:100%;width:100%;transition:background 1s'></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var online=d[0]&&d[0].online===1;\n    var el=document.getElementById('lnk');\n    if(!el)return;\n    if(online){el.style.background='transparent';el.innerHTML='';}\n    else{el.style.background='rgba(200,30,30,0.18)';el.innerHTML='<div style=\"font-family:monospace;font-size:2.2em;font-weight:bold;color:#ff4d4f;letter-spacing:5px;text-shadow:0 0 20px rgba(255,50,50,0.8);animation:lsp 1.5s ease-in-out infinite\">&#9888; LINK SEVERED &#9888;</div><div style=\"font-family:monospace;font-size:0.95em;color:#ff9999;letter-spacing:3px;margin-top:6px\">SATELLITE OPERATING AUTONOMOUSLY IN DDIL MODE</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.4}}</style>';}\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
+        "content": "<div id='lnk' style='display:flex;align-items:center;justify-content:center;height:100%;width:100%;flex-direction:column;transition:background 1s'></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var online=d[0]&&d[0].online===1;\n    var el=document.getElementById('lnk');\n    if(!el)return;\n    if(online){el.style.background='transparent';el.innerHTML='';}\n    else{el.style.background='rgba(200,30,30,0.18)';el.innerHTML='<div style=\"font-family:monospace;font-size:2.2em;font-weight:bold;color:#ff4d4f;letter-spacing:5px;text-shadow:0 0 20px rgba(255,50,50,0.8);animation:lsp 1.5s ease-in-out infinite\">&#9888; LINK SEVERED &#9888;</div><div style=\"font-family:monospace;font-size:0.95em;color:#ff9999;letter-spacing:3px;margin-top:24px\">SATELLITE OPERATING AUTONOMOUSLY IN DDIL MODE</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.4}}</style>';}\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
       }
     },
     {
@@ -74,7 +74,7 @@
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "flightctl-ds"
+        "uid": "groundstation-ds"
       },
       "targets": [
         {
