@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "<div id='s1' style='display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif'><span style='font-size:3em;font-weight:bold;color:#888'>Loading...</span></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var online=d[0]&&d[0].online===1;\n    var el=document.getElementById('s1');\n    if(el){el.style.background=online?'#1a5c2a':'#6b0f1a';el.innerHTML='<span style=\"font-size:4em;font-weight:bold;color:'+(online?'#52c41a':'#ff4d4f')+'\">'+(online?'ONLINE':'OFFLINE')+'</span>';}\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
+        "content": "<div id='s1' style='display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif'><span style='font-size:3em;font-weight:bold;color:#888'>Loading...</span></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var s=d[0]||{};\n    var online=s.online===1;\n    var scanning=s.over_aoi===1;\n    var el=document.getElementById('s1');\n    if(el){\n      el.style.background=online?'#1a5c2a':'#6b0f1a';\n      el.innerHTML='<span style=\"font-size:4em;font-weight:bold;color:'+(online?'#52c41a':'#ff4d4f')+'\">'+(online?'ONLINE':'OFFLINE')+'</span>';\n    }\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
       }
     },
     {
@@ -59,13 +59,13 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "<div id='lnk' style='display:flex;align-items:center;justify-content:center;height:100%;width:100%;flex-direction:column;transition:background 1s'></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var online=d[0]&&d[0].online===1;\n    var el=document.getElementById('lnk');\n    if(!el)return;\n    if(online){el.style.background='transparent';el.innerHTML='';}\n    else{el.style.background='rgba(200,30,30,0.18)';el.innerHTML='<div style=\"font-family:monospace;font-size:2.2em;font-weight:bold;color:#ff4d4f;letter-spacing:5px;text-shadow:0 0 20px rgba(255,50,50,0.8);animation:lsp 1.5s ease-in-out infinite\">&#9888; LINK SEVERED &#9888;</div><div style=\"font-family:monospace;font-size:0.95em;color:#ff9999;letter-spacing:3px;margin-top:24px\">SATELLITE OPERATING AUTONOMOUSLY IN DDIL MODE</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.4}}</style>';}\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
+        "content": "<div id='lnk' style='display:flex;align-items:center;justify-content:center;height:100%;width:100%;flex-direction:column;transition:background 1s'></div><script>(function(){\n  var url='https://{{ _gs_route_host.stdout | trim }}/grafana/status';\n  function update(){fetch(url).then(function(r){return r.json()}).then(function(d){\n    var s=d[0]||{};\n    var online=s.online===1;\n    var scanning=s.over_aoi===1;\n    var el=document.getElementById('lnk');\n    if(!el)return;\n    if(!online){\n      el.style.background='rgba(200,30,30,0.18)';\n      el.innerHTML='<div style=\"font-family:monospace;font-size:2.2em;font-weight:bold;color:#ff4d4f;letter-spacing:5px;text-shadow:0 0 20px rgba(255,50,50,0.8);animation:lsp 1.5s ease-in-out infinite\">&#9888; LINK SEVERED &#9888;</div><div style=\"font-family:monospace;font-size:0.95em;color:#ff9999;letter-spacing:3px;margin-top:24px\">SATELLITE OPERATING AUTONOMOUSLY IN DDIL MODE</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.4}}</style>';\n    }else if(scanning){\n      el.style.background='rgba(245,166,35,0.15)';\n      el.innerHTML='<div style=\"font-family:monospace;font-size:2.2em;font-weight:bold;color:#f5a623;letter-spacing:5px;text-shadow:0 0 15px rgba(245,166,35,0.7);animation:lsp 2s ease-in-out infinite\">&#9679; SCANNING AOI</div><style>@keyframes lsp{0%,100%{opacity:1}50%{opacity:0.6}}</style>';\n    }else{\n      el.style.background='transparent';\n      el.innerHTML='';\n    }\n  }).catch(function(){});}\n  update();setInterval(update,5000);\n})();</script>"
       }
     },
     {
       "id": 2,
       "type": "geomap",
-      "title": "Satellite AOI \u2014 Persian Gulf",
+      "title": "Satellite Ground Track",
       "gridPos": {
         "h": 15,
         "w": 24,
@@ -81,9 +81,9 @@
       "options": {
         "view": {
           "id": "coords",
-          "lat": 26.5,
-          "lon": 51.5,
-          "zoom": 4
+          "lat": 20.0,
+          "lon": 20.0,
+          "zoom": 2
         },
         "controls": {
           "showZoom": true,
@@ -98,17 +98,35 @@
         "layers": [
           {
             "type": "geojson",
-            "name": "Satellite AOI",
+            "name": "AOI \u2014 Persian Gulf",
             "config": {
-              "src": "https://{{ _gs_route_host.stdout | trim }}/grafana/aoi.geojson",
+              "src": "https://{{ _gs_route_host.stdout | trim }}/grafana/aoi-polygon.geojson",
               "style": {
+                "color": {
+                  "fixed": "#f5a623"
+                },
+                "fillOpacity": 0.12,
+                "size": {
+                  "fixed": 4
+                }
+              }
+            },
+            "tooltip": true,
+            "opacity": 1
+          },
+          {
+            "type": "geojson",
+            "name": "Satellite Position",
+            "config": {
+              "src": "https://{{ _gs_route_host.stdout | trim }}/grafana/satellite.geojson",
+              "style": {
+                "color": {
+                  "fixed": "#52c41a"
+                },
+                "fillOpacity": 1,
                 "size": {
                   "fixed": 14
-                },
-                "color": {
-                  "fixed": "green"
-                },
-                "fillOpacity": 1
+                }
               }
             },
             "tooltip": true,
