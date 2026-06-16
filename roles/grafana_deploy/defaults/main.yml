@@ -1,5 +1,5 @@
 ---
-grafana_image: "docker.io/grafana/grafana:11.6.0"
+grafana_image: "docker.io/grafana/grafana:10.4.15"
 grafana_service_name: satellite-grafana
 grafana_admin_password: satellite
 
